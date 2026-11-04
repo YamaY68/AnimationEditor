@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.37806.7 d17.14
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "AnimationEditor", "AnimationEditor.vcxproj", "{FDF3C312-C616-4F00-AEF6-4ADA3B648FCC}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x64 = Debug|x64
+		Debug|x86 = Debug|x86
+		Release|x64 = Release|x64
+		Release|x86 = Release|x86
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{FDF3C312-C616-4F00-AEF6-4ADA3B648FCC}.Debug|x64.ActiveCfg = Debug|x64
+		{FDF3C312-C616-4F00-AEF6-4ADA3B648FCC}.Debug|x64.Build.0 = Debug|x64
+		{FDF3C312-C616-4F00-AEF6-4ADA3B648FCC}.Debug|x86.ActiveCfg = Debug|Win32
+		{FDF3C312-C616-4F00-AEF6-4ADA3B648FCC}.Debug|x86.Build.0 = Debug|Win32
+		{FDF3C312-C616-4F00-AEF6-4ADA3B648FCC}.Release|x64.ActiveCfg = Release|x64
+		{FDF3C312-C616-4F00-AEF6-4ADA3B648FCC}.Release|x64.Build.0 = Release|x64
+		{FDF3C312-C616-4F00-AEF6-4ADA3B648FCC}.Release|x86.ActiveCfg = Release|Win32
+		{FDF3C312-C616-4F00-AEF6-4ADA3B648FCC}.Release|x86.Build.0 = Release|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {02ED803F-8663-418E-ABF0-DD09A2C3818E}
+	EndGlobalSection
+EndGlobal
