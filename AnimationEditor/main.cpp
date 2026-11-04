@@ -3,17 +3,19 @@
 #include<wrl/client.h>
 #pragma comment(lib, "d3d11.lib")
 #pragma comment(lib, "dxgi.lib")
-//#include <fbxsdk.h>
-//
-//#if defined(_DEBUG)
-//#pragma comment(lib, "libfbxsdk-md.lib")
-//#else
-//#pragma comment(lib, "libfbxsdk-md.lib")
-//#endif
 
-#include"imgui.h"
-#include"imgui_impl_win32.h"
-#include"imgui_impl_dx11.h"
+// FBX SDK のインクルードと自動リンク
+#include <fbxsdk.h>
+
+#if defined(_DEBUG)
+#pragma comment(lib, "libfbxsdk-mt.lib")
+#else
+#pragma comment(lib, "libfbxsdk-mt.lib")
+#endif
+
+#include"ImGui/imgui.h"
+#include"ImGui/imgui_impl_win32.h"
+#include"ImGui/imgui_impl_dx11.h"
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM mParam, LPARAM lParam);
 
