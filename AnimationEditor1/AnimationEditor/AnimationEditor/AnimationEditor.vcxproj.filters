@@ -146,6 +146,9 @@
     <ClInclude Include="Src\UI\FileDialog.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
+    <ClInclude Include="Library\FBXSDK\2020.3.11\include\fbxsdk.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="Library\ImGui\imgui.ini" />
