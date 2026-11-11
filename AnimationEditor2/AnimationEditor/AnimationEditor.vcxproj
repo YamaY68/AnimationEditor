@@ -110,7 +110,7 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>$(ProjectDir)Library\DxLib;$(ProjectDir)\Library\FBXSDK\2020.3.11\lib\x64\debug;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(ProjectDir)Library\DxLib;$(ProjectDir)\Library\FBXSDK\2020.3.11\lib\x64\debug;C:\Project\AnimationEditor\AnimationEditor2\Anim\2020.3.11\lib\x64\debug\include;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -129,16 +129,22 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>$(ProjectDir)Library\DxLib;$(ProjectDir)\Library\FBXSDK\2020.3.11\lib\x64\debug;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(ProjectDir)Library\DxLib;$(ProjectDir)\Library\FBXSDK\2020.3.11\lib\x64\debug;C:\Project\AnimationEditor\AnimationEditor2\\2020.3.11\lib\x64\debug;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="Src\Animation\AnimationClip.cpp" />
+    <ClCompile Include="Src\Fbx\FbxModelLoader.cpp" />
+    <ClCompile Include="Src\Fbx\FbxMeshModel.cpp" />
     <ClCompile Include="Src\Animation\Skeleton.cpp" />
     <ClCompile Include="Src\Animation\PoseBlender.cpp" />
     <ClCompile Include="Src\Camera\Camera.cpp" />
     <ClCompile Include="Src\main.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Src\Animation\AnimationClip.h" />
+    <ClInclude Include="Src\Fbx\FbxModelLoader.h" />
+    <ClInclude Include="Src\Fbx\FbxMeshModel.h" />
     <ClInclude Include="Src\Animation\Skeleton.h" />
     <ClInclude Include="Src\Animation\PoseBlender.h" />
     <ClInclude Include="Src\Animation\AnimationTrack.h" />

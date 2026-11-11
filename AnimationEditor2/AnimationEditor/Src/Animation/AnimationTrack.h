@@ -116,7 +116,7 @@ public:
 
 struct BoneTrack
 {
-	int boneIndex = -1;
+	int boneIndex_ = -1;
 	AnimationTrack<DirectX::XMFLOAT3>translationTrack_;
 	AnimationTrack<DirectX::XMFLOAT4>rotationTrack_;
 	AnimationTrack<DirectX::XMFLOAT3>scaleTrack_;
