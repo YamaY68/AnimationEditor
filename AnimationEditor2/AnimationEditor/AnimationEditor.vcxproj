@@ -133,11 +133,14 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="Src\Animation\AnimationTrack.cpp" />
+    <ClCompile Include="Src\Animation\Skeleton.cpp" />
+    <ClCompile Include="Src\Animation\PoseBlender.cpp" />
     <ClCompile Include="Src\Camera\Camera.cpp" />
     <ClCompile Include="Src\main.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Src\Animation\Skeleton.h" />
+    <ClInclude Include="Src\Animation\PoseBlender.h" />
     <ClInclude Include="Src\Animation\AnimationTrack.h" />
     <ClInclude Include="Src\Animation\Easing.h" />
     <ClInclude Include="Src\Animation\KeyFrame.h" />

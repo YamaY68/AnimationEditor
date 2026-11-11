@@ -4,7 +4,7 @@
 
 enum class InterpolationType
 {
-	Liniar,	//üŒ`•âŠ®
+	Linear,	//üŒ`•âŠ®
 	Step,	//‘¦Ø‘Ö
 	EaseInQuad,	//2Ÿ‹Èü‰Á‘¬
 	EaseOutQuad,	//2Ÿ‹Èü‰Á‘¬
@@ -15,13 +15,13 @@ enum class InterpolationType
 
 namespace Easing
 {
-	inline float Evalute(float t, InterpolationType type)
+	inline float Evaluate(float t, InterpolationType type)
 	{
 		t = std::clamp(t, 0.0f, 1.0f);
 
 		switch (type)
 		{
-		case InterpolationType::Liniar:
+		case InterpolationType::Linear:
 			return t;
 			break;
 		case InterpolationType::Step:
