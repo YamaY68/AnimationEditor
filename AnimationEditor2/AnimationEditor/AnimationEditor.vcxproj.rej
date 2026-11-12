@@ -1,0 +1,9 @@
+diff a/AnimationEditor2/AnimationEditor/AnimationEditor.vcxproj b/AnimationEditor2/AnimationEditor/AnimationEditor.vcxproj	(rejected hunks)
+@@ -129,7 +129,6 @@
+     <Link>
+       <SubSystem>Windows</SubSystem>
+       <GenerateDebugInformation>true</GenerateDebugInformation>
+-      <AdditionalLibraryDirectories>$(ProjectDir)Library\DxLib;$(ProjectDir)\Library\FBXSDK\2020.3.11\lib\x64\debug;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+       <AdditionalLibraryDirectories>$(ProjectDir)Library\DxLib;$(ProjectDir)\Library\FBXSDK\2020.3.11\lib\x64\debug;C:\Project\AnimationEditor\AnimationEditor2\\2020.3.11\lib\x64\debug;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+     </Link>
+   </ItemDefinitionGroup>

@@ -133,6 +133,8 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="Src\UI\InspectorView.cpp" />
+    <ClCompile Include="Src\UI\ImGuiManager.cpp" />
     <ClCompile Include="Src\Animation\AnimationClip.cpp" />
     <ClCompile Include="Src\Fbx\FbxModelLoader.cpp" />
     <ClCompile Include="Src\Fbx\FbxMeshModel.cpp" />
@@ -140,8 +142,11 @@
     <ClCompile Include="Src\Animation\PoseBlender.cpp" />
     <ClCompile Include="Src\Camera\Camera.cpp" />
     <ClCompile Include="Src\main.cpp" />
+    <ClCompile Include="Src\UI\TimeLineView.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Src\UI\InspectorView.h" />
+    <ClInclude Include="Src\UI\ImGuiManager.h" />
     <ClInclude Include="Src\Animation\AnimationClip.h" />
     <ClInclude Include="Src\Fbx\FbxModelLoader.h" />
     <ClInclude Include="Src\Fbx\FbxMeshModel.h" />
@@ -153,6 +158,8 @@
     <ClInclude Include="Src\Animation\Pose.h" />
     <ClInclude Include="Src\Camera\Camera.h" />
     <ClInclude Include="Src\Common\Transform.h" />
+    <ClInclude Include="Src\UI\FileDialogHelper.h" />
+    <ClInclude Include="Src\UI\TimeLineView.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
