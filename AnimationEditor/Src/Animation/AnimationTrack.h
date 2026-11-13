@@ -147,4 +147,18 @@ struct BoneTrack
 		rotationTrack_.SetKey(time, transform.rotation_);
 		scaleTrack_.SetKey(time, transform.scale_);
 	}
+
+	/// <summary>
+	/// 指定区間の既存のキーを一掃し、始点終点の姿勢で補間置換
+	/// </summary>
+	/// <param name="rangeStart">始点</param>
+	/// <param name="rangeEnd">終点</param>
+	/// <param name="startTransform">始点のローカルTransoform</param>
+	/// <param name="endTransform">終点のローカルTransform</param>
+	void ReplaceRange(float rangeStart, float rangeEnd, const Transform& startTransform, const Transform& endTransform)
+	{
+		translationTrack_.SetRangeKeys(rangeStart, rangeEnd, startTransform.translation_, endTransform.translation_);
+		rotationTrack_.SetRangeKeys(rangeStart, rangeEnd, startTransform.rotation_, endTransform.rotation_);
+		scaleTrack_.SetRangeKeys(rangeStart, rangeEnd, startTransform.scale_, endTransform.scale_);
+	}
 };

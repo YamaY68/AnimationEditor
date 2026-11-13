@@ -185,16 +185,16 @@ MenuActionType TimeLineView::Draw(HWND hWnd, const std::vector<AnimationClip>& c
         //マーカーを描画する時刻を収集する配列
         std::vector<float>keyTimes;
 
-        //選択中ボーンのOverrideレイヤー時刻を収集
+        // クリップ内の全ボーントラックを走査
         for (const auto& track : activeClip.boneTracks_)
         {
-            //ボーン未選択なら全ボーン、選択中ならそのボーンのトラックのみ対象にする
+            // ボーン未選択(-1)なら全ボーン、選択中ならそのボーンのトラックのみ対象にする
             if (selectedBoneIndex == -1 || track.boneIndex_ == selectedBoneIndex)
             {
-                //手動キーの時刻を移動、回転、拡縮の３チャンネルから収集
-                for (const auto& k : track.translationTrack_.keys_) keyTimes.push_back(k.time_);
-                for (const auto& k : track.rotationTrack_.keys_)    keyTimes.push_back(k.time_);
-                for (const auto& k : track.scaleTrack_.keys_)       keyTimes.push_back(k.time_);
+                // 手動編集フラグ（isUserEdited_ == true）が立っているキーの時刻のみを収集
+                for (const auto& k : track.translationTrack_.keys_) { if (k.isUserEdited_) keyTimes.push_back(k.time_); }
+                for (const auto& k : track.rotationTrack_.keys_) { if (k.isUserEdited_) keyTimes.push_back(k.time_); }
+                for (const auto& k : track.scaleTrack_.keys_) { if (k.isUserEdited_) keyTimes.push_back(k.time_); }
             }
         }
 
