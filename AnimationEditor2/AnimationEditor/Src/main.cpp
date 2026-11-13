@@ -7,6 +7,7 @@
 #include"Camera/Camera.h"
 
 
+
 void DrawGridAndAxes(float size, int divisions)
 {
 	float half = size * 0.5f;
