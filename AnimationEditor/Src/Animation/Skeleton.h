@@ -49,7 +49,7 @@ public:
 	void ComputeWorldMatrices(const Pose& localPose, std::vector<DirectX::XMFLOAT4X4>& outWorldMatrices)const;
 	
 	//ƒ{[ƒ“‚ÌœŠi‚ÆŠÖß‹…‚Ì•`‰æ
-	void DrawdebugBones(const std::vector<DirectX::XMFLOAT4X4>& worldMatrices, int boneColor, int jointColor)const;
+	void DrawDebugBones(const std::vector<DirectX::XMFLOAT4X4>& worldMatrices, int boneColor, int jointColor)const;
 
 	size_t GetBoneCount(void)const { return bones_.size(); }
 	const Bone& GetBone(size_t index)const { return bones_[index]; }

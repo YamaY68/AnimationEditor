@@ -86,7 +86,7 @@ void Skeleton::ComputeWorldMatrices(const Pose& localPose, std::vector<DirectX::
     }
 }
 
-void Skeleton::DrawdebugBones(const std::vector<DirectX::XMFLOAT4X4>& worldMatrices, int boneColor, int jointColor) const
+void Skeleton::DrawDebugBones(const std::vector<DirectX::XMFLOAT4X4>& worldMatrices, int boneColor, int jointColor) const
 {
     const size_t count = bones_.size();
     for (size_t i = 0; i < count; ++i)
