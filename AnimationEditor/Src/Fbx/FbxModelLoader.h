@@ -32,8 +32,7 @@ public:
 	//FBXファイルからボーン階層を読み込む
 	bool LoadSkeleton(const std::string& filePath, Skeleton& outSkeleton);
 	//FBXファイルからスキンメッシュとボーンウェイトを読み込む
-	bool LoadMeshWithSkinning(const std::string& filepath, const Skeleton& skeleton, FbxMeshModel& outMeshModel);
-	//FBXからアニメーションクリップを読み込む
+	bool LoadMeshWithSkinning(const std::string& filepath, Skeleton& skeleton, FbxMeshModel& outMeshModel);	//FBXからアニメーションクリップを読み込む
 	bool LoadAnimation(const std::string& filePath, const Skeleton& skeleton, AnimationClip& outClip);
 
 private:

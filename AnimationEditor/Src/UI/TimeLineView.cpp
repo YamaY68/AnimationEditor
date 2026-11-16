@@ -52,12 +52,11 @@ MenuActionType TimeLineView::Draw(HWND hWnd, const std::vector<AnimationClip>& c
     {
         ImGui::SetNextWindowSize(ImVec2(500, 80), ImGuiCond_FirstUseEver);
         ImGui::Begin("Timeline");
-        ImGui::Text("ベースとなるモデル(.fbx)をドラッグ＆ドロップ");
-        ImGui::Text("アニメーションを追加(File->AddAnimation)");
+        ImGui::Text("Drag & Drop Base Model (.fbx)");
+        ImGui::Text("Add Animation via File -> AddAnimation(.fbx)");
         ImGui::End();
         return action;
     }
-
     //クリップインデックスの安全範囲クランプ
     if (currentClipIndex < 0 || currentClipIndex >= static_cast<int>(clips.size()))
     {

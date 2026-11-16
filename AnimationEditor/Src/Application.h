@@ -27,6 +27,7 @@ public:
 	void Release(void);
 
 private:
+    void LoadDefaultModel(void);
 	void UpdateFrame(void);
 
 	void ProcessDroppedFiles(void);

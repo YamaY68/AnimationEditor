@@ -33,6 +33,7 @@ bool Application::Init(void)
     camera_.SetTarget(VGet(0.0f, 90.0f, 0.0f));
     camera_.SetDistance(180.0f);
 
+    LoadDefaultModel();
     return true;
 }
 
@@ -51,6 +52,11 @@ void Application::Release(void)
     imguiManager_.Finalize();
     loader_.Finalize();
     DxLib_End();
+}
+
+void Application::LoadDefaultModel(void)
+{
+    LoadParentModel("Data/DefaultModel.fbx");
 }
 
 void Application::UpdateFrame(void)

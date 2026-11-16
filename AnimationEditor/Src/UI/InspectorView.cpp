@@ -147,7 +147,7 @@ bool InspectorView::Draw(const Skeleton& skeleton, Pose& inOutPose, AnimationCli
 				//In点がセット済みの場合、記録された開始時刻を表示
 				if (hasRangeStartPose_)
 				{
-					ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "In time:%.3f sec(Ready)", rangeEndTime_);
+					ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "In time:%.3f sec(Ready)", rangeStartTime_);
 				}
 				else
 				{

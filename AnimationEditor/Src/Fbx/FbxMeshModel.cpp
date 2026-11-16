@@ -79,29 +79,32 @@ void FbxMeshModel::UpdateSkinning(const Skeleton& skeleton, const std::vector<XM
 
 void FbxMeshModel::Draw(void) const
 {
-	if (skinnedVertices_.empty() || indices_.empty())return;
+	if (skinnedVertices_.empty()) return;
 
-	//サブメッシュ単位で描画
+	SetUseBackCulling(FALSE);
+	SetTextureAddressMode(DX_TEXADDRESS_WRAP);
+	SetDrawBlendMode(DX_BLENDMODE_NOBLEND, 255);
+
 	for (const auto& sub : subMeshes_)
 	{
-		if (sub.indexCount_ == 0)continue;
+		if (sub.indexCount_ == 0) continue;
+
+		size_t vertexOffset = static_cast<size_t>(sub.startIndex_);
+		if (vertexOffset >= skinnedVertices_.size()) continue;
 
 		int polygonCount = static_cast<int>(sub.indexCount_ / 3);
-		const unsigned short* indexPtr = &indices_[sub.startIndex_];
-
 		int tex = (sub.textureHandle_ != -1) ? sub.textureHandle_ : DX_NONE_GRAPH;
 
-		DrawPolygonIndexed3D(
-			const_cast<VERTEX3D*>(skinnedVertices_.data()),
-			static_cast<int>(skinnedVertices_.size()),
-			const_cast<unsigned short*>(indexPtr),
+		DrawPolygon3D(
+			const_cast<VERTEX3D*>(&skinnedVertices_[vertexOffset]),
 			polygonCount,
 			tex,
-			true
+			FALSE
 		);
 	}
-}
 
+	SetUseBackCulling(TRUE);
+}
 void FbxMeshModel::ReleaseTextures(void)
 {
 	for (auto& sub : subMeshes_)

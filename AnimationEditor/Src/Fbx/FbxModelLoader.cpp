@@ -3,9 +3,24 @@
 #include <iostream>
 #include <algorithm>
 #include <functional>
+#include <unordered_map>
 #include <DxLib.h>
 
 using namespace DirectX;
+
+// FbxAMatrix を DirectX::XMFLOAT4X4 へ変換
+static XMFLOAT4X4 ToXMFLOAT4X4(const FbxAMatrix& src)
+{
+    XMFLOAT4X4 dst;
+    for (int r = 0; r < 4; ++r)
+    {
+        for (int c = 0; c < 4; ++c)
+        {
+            dst.m[r][c] = static_cast<float>(src.Get(r, c));
+        }
+    }
+    return dst;
+}
 
 // テクスチャファイルパス解決ヘルパー
 static std::string ResolveFilePath(FbxNode* node, const std::string& fbxFilePath)
@@ -47,11 +62,9 @@ static std::string ResolveFilePath(FbxNode* node, const std::string& fbxFilePath
             if (rawName.empty()) rawName = fileTex->GetFileName();
             std::string fileName = std::filesystem::path(rawName).filename().string();
 
-            // 1. <FBX名>.fbm フォルダ探索
             std::string candidate1 = fbmDir + "/" + fileName;
             if (std::filesystem::exists(candidate1)) return candidate1;
 
-            // 2. ディレクトリ内の別名 .fbm フォルダ探索
             if (std::filesystem::exists(fbxDir))
             {
                 for (const auto& entry : std::filesystem::directory_iterator(fbxDir))
@@ -64,11 +77,9 @@ static std::string ResolveFilePath(FbxNode* node, const std::string& fbxFilePath
                 }
             }
 
-            // 3. FBXファイルと同階層
             std::string candidate2 = fbxDir + "/" + fileName;
             if (std::filesystem::exists(candidate2)) return candidate2;
 
-            // 4. フルパス
             if (std::filesystem::exists(fileTex->GetFileName()))
             {
                 return fileTex->GetFileName();
@@ -80,18 +91,15 @@ static std::string ResolveFilePath(FbxNode* node, const std::string& fbxFilePath
     return "";
 }
 
-// コンストラクタ
 FbxModelLoader::FbxModelLoader(void)
 {
 }
 
-// デストラクタ
 FbxModelLoader::~FbxModelLoader(void)
 {
     Finalize();
 }
 
-// 初期化
 bool FbxModelLoader::Initialize(void)
 {
     if (!fbxManager_)
@@ -105,7 +113,6 @@ bool FbxModelLoader::Initialize(void)
     return true;
 }
 
-// 終了処理
 void FbxModelLoader::Finalize(void)
 {
     if (fbxScene_)
@@ -126,14 +133,10 @@ void FbxModelLoader::Finalize(void)
 }
 
 /// @brief FBXファイルからボーン階層を構築する
-/// @param filePath ファイルパス
-/// @param outSkeleton 出力先スケルトン
-/// @return 成功時 true
 bool FbxModelLoader::LoadSkeleton(const std::string& filePath, Skeleton& outSkeleton)
 {
     if (!Initialize()) return false;
 
-    // Autodesk SDK側のインポーターであることを明示
     fbxsdk::FbxImporter* sdkImporter = fbxsdk::FbxImporter::Create(fbxManager_, "");
     if (!sdkImporter->Initialize(filePath.c_str(), -1, ioSetting_))
     {
@@ -146,10 +149,7 @@ bool FbxModelLoader::LoadSkeleton(const std::string& filePath, Skeleton& outSkel
     sdkImporter->Import(fbxScene_);
     sdkImporter->Destroy();
 
-    // 座標系を DirectX（左手系・Y-up）に変換
-    FbxAxisSystem directXAxis = FbxAxisSystem::DirectX;
-    directXAxis.ConvertScene(fbxScene_);
-
+    // ※ ConvertScene は頂点・クラスター行列を変換せずボーンとズレるため呼ばない
     FbxNode* rootNode = fbxScene_->GetRootNode();
     if (rootNode)
     {
@@ -161,14 +161,13 @@ bool FbxModelLoader::LoadSkeleton(const std::string& filePath, Skeleton& outSkel
     return outSkeleton.GetBoneCount() > 0;
 }
 
-/// @brief スキンメッシュとボーンウェイトを読み込む
-/// @param filepath ファイルパス
-/// @param skeleton 対応スケルトン
-/// @param outMeshModel 出力先メッシュモデル
-/// @return 成功時 true
-bool FbxModelLoader::LoadMeshWithSkinning(const std::string& filepath, const Skeleton& skeleton, FbxMeshModel& outMeshModel)
+/// @brief スキンメッシュとボーンウェイト、逆バインド行列を読み込む
+bool FbxModelLoader::LoadMeshWithSkinning(const std::string& filepath, Skeleton& skeleton, FbxMeshModel& outMeshModel)
 {
     if (!fbxScene_) return false;
+
+    FbxGeometryConverter geomConverter(fbxManager_);
+    geomConverter.Triangulate(fbxScene_, true);
 
     std::vector<FbxNode*> meshNodes;
     std::function<void(FbxNode*)> findMeshes = [&](FbxNode* n)
@@ -181,9 +180,12 @@ bool FbxModelLoader::LoadMeshWithSkinning(const std::string& filepath, const Ske
 
     if (meshNodes.empty()) return false;
 
+    outMeshModel.ReleaseTextures();
     outMeshModel.sourceVertices_.clear();
     outMeshModel.indices_.clear();
     outMeshModel.subMeshes_.clear();
+
+    std::unordered_map<std::string, int> loadedTextures;
 
     for (FbxNode* node : meshNodes)
     {
@@ -215,6 +217,16 @@ bool FbxModelLoader::LoadMeshWithSkinning(const std::string& filepath, const Ske
                 int boneIdx = skeleton.FindBoneIndex(linkNode->GetName());
                 if (boneIdx < 0) continue;
 
+                // FBXクラスターから正確なバインドワールド行列を取得し、その逆行列をセット
+// ★ 修正: transformMatrix は掛けず、transformLinkMatrix の逆行列だけを使う
+                FbxAMatrix transformLinkMatrix;
+                cluster->GetTransformLinkMatrix(transformLinkMatrix);
+
+                XMFLOAT4X4 bindMat = ToXMFLOAT4X4(transformLinkMatrix);
+                XMMATRIX xBind = XMLoadFloat4x4(&bindMat);
+                XMVECTOR det;
+                XMMATRIX xInvBind = XMMatrixInverse(&det, xBind);
+                XMStoreFloat4x4(&const_cast<Bone&>(skeleton.GetBone(boneIdx)).invBindMatrix_, xInvBind);
                 int indexCount = cluster->GetControlPointIndicesCount();
                 int* cpIndices = cluster->GetControlPointIndices();
                 double* weights = cluster->GetControlPointWeights();
@@ -253,20 +265,32 @@ bool FbxModelLoader::LoadMeshWithSkinning(const std::string& filepath, const Ske
         int texHandle = -1;
         if (!texPath.empty())
         {
-            texHandle = LoadGraph(texPath.c_str());
+            auto it = loadedTextures.find(texPath);
+            if (it != loadedTextures.end())
+            {
+                texHandle = it->second;
+            }
+            else
+            {
+                texHandle = LoadGraph(texPath.c_str());
+                if (texHandle != -1) loadedTextures[texPath] = texHandle;
+            }
         }
 
+        // DrawPolygon3D（非インデックス描画）用に頂点配列の開始位置を記録
         SubMesh subMesh;
-        subMesh.startIndex_ = static_cast<unsigned int>(outMeshModel.sourceVertices_.size());
+        subMesh.startIndex_ = static_cast<int>(outMeshModel.sourceVertices_.size());
         subMesh.textureHandle_ = texHandle;
 
         int polygonCount = mesh->GetPolygonCount();
+        // DxLib（左手系）用に時計回り（0, 2, 1）で頂点を展開して格納
+        const int winding[3] = { 0, 2, 1 };
+
         for (int p = 0; p < polygonCount; ++p)
         {
-            unsigned short currentStartIdx = static_cast<unsigned short>(outMeshModel.sourceVertices_.size());
-
-            for (int v = 0; v < 3; ++v)
+            for (int w = 0; w < 3; ++w)
             {
+                int v = winding[w];
                 int cpIndex = mesh->GetPolygonVertex(p, v);
 
                 SkinVertex vert;
@@ -302,25 +326,18 @@ bool FbxModelLoader::LoadMeshWithSkinning(const std::string& filepath, const Ske
                 }
 
                 outMeshModel.sourceVertices_.push_back(vert);
+                outMeshModel.indices_.push_back(0); // ダミー（DrawPolygon3Dでは頂点順で直接描画）
             }
-
-            outMeshModel.indices_.push_back(currentStartIdx + 0);
-            outMeshModel.indices_.push_back(currentStartIdx + 2);
-            outMeshModel.indices_.push_back(currentStartIdx + 1);
         }
 
-        subMesh.indexCount_ = static_cast<unsigned int>(polygonCount * 3);
+        subMesh.indexCount_ = static_cast<int>(polygonCount * 3);
         outMeshModel.subMeshes_.push_back(subMesh);
     }
 
     return !outMeshModel.sourceVertices_.empty();
 }
 
-/// @brief アニメーションを読み込む（0秒と終了秒の2点サンプリング）
-/// @param filePath ファイルパス
-/// @param skeleton 対応スケルトン
-/// @param outClip 出力先アニメーションクリップ
-/// @return 成功時 true
+/// @brief アニメーションを読み込む
 bool FbxModelLoader::LoadAnimation(const std::string& filePath, const Skeleton& skeleton, AnimationClip& outClip)
 {
     if (!Initialize()) return false;
@@ -344,9 +361,12 @@ bool FbxModelLoader::LoadAnimation(const std::string& filePath, const Skeleton& 
     }
 
     FbxAnimStack* animStack = scene->GetSrcObject<FbxAnimStack>(0);
+    scene->SetCurrentAnimationStack(animStack);
+
     outClip.name_ = animStack->GetName();
 
     FbxTimeSpan timeSpan = animStack->GetLocalTimeSpan();
+    FbxTime startTime = timeSpan.GetStart();
     float duration = static_cast<float>(timeSpan.GetDuration().GetSecondDouble());
 
     if (duration <= 0.05f)
@@ -354,17 +374,22 @@ bool FbxModelLoader::LoadAnimation(const std::string& filePath, const Skeleton& 
         FbxTakeInfo* takeInfo = scene->GetTakeInfo(animStack->GetName());
         if (takeInfo)
         {
+            startTime = takeInfo->mLocalTimeSpan.GetStart();
             duration = static_cast<float>(takeInfo->mLocalTimeSpan.GetDuration().GetSecondDouble());
         }
         else
         {
             scene->GetGlobalSettings().GetTimelineDefaultTimeSpan(timeSpan);
+            startTime = timeSpan.GetStart();
             duration = static_cast<float>(timeSpan.GetDuration().GetSecondDouble());
         }
     }
 
     outClip.duration_ = duration;
     outClip.boneTracks_.clear();
+    outClip.boneTracks_.reserve(skeleton.GetBoneCount());
+
+    float startSec = static_cast<float>(startTime.GetSecondDouble());
 
     for (size_t b = 0; b < skeleton.GetBoneCount(); ++b)
     {
@@ -373,7 +398,35 @@ bool FbxModelLoader::LoadAnimation(const std::string& filePath, const Skeleton& 
         if (node)
         {
             BoneTrack* track = outClip.GetOrCreateTrack(static_cast<int>(b));
-            ExtractNodeAnimation(node, static_cast<int>(b), duration, *track);
+            track->boneIndex_ = static_cast<int>(b);
+
+            const float frameRate = 30.0f;
+            int frameCount = static_cast<int>(duration * frameRate);
+            float dt = 1.0f / frameRate;
+
+            for (int f = 0; f <= frameCount; ++f)
+            {
+                float t = (f == frameCount) ? duration : (f * dt);
+                FbxTime fbxTime;
+                fbxTime.SetSecondDouble(startSec + t);
+
+                // ルートボーン（parentIndex_ == -1）の場合は親ノード（Armature等）の回転・スケールも含めたグローバル姿勢を使う
+                FbxAMatrix localMatrix = (bone.parentIndex_ == -1)
+                    ? node->EvaluateGlobalTransform(fbxTime)
+                    : node->EvaluateLocalTransform(fbxTime);
+
+                FbxVector4 lT = localMatrix.GetT();
+                FbxQuaternion lQ = localMatrix.GetQ();
+                FbxVector4 lS = localMatrix.GetS();
+
+                XMFLOAT3 pos = { static_cast<float>(lT[0]), static_cast<float>(lT[1]), static_cast<float>(lT[2]) };
+                XMFLOAT4 rot = { static_cast<float>(lQ[0]), static_cast<float>(lQ[1]), static_cast<float>(lQ[2]), static_cast<float>(lQ[3]) };
+                XMFLOAT3 scl = { static_cast<float>(lS[0]), static_cast<float>(lS[1]), static_cast<float>(lS[2]) };
+
+                track->translationTrack_.AddKey(t, pos, InterpolationType::Linear, false);
+                track->rotationTrack_.AddKey(t, rot, InterpolationType::Linear, false);
+                track->scaleTrack_.AddKey(t, scl, InterpolationType::Linear, false);
+            }
         }
     }
 
@@ -382,9 +435,6 @@ bool FbxModelLoader::LoadAnimation(const std::string& filePath, const Skeleton& 
 }
 
 /// @brief シーンノードを深さ優先探索してスケルトン階層を登録する
-/// @param node 走査対象ノード
-/// @param parentIndex 親ボーンインデックス
-/// @param outSkeleton 出力先スケルトン
 void FbxModelLoader::ProcessSkeletonHierarchy(FbxNode* node, int parentIndex, Skeleton& outSkeleton)
 {
     if (!node) return;
@@ -396,47 +446,10 @@ void FbxModelLoader::ProcessSkeletonHierarchy(FbxNode* node, int parentIndex, Sk
     {
         std::string boneName = node->GetName();
 
-        FbxDouble3 lT = node->LclTranslation.Get();
-        FbxDouble3 lR = node->LclRotation.Get();
-        FbxDouble3 lS = node->LclScaling.Get();
-
-        XMFLOAT3 pos = { static_cast<float>(lT[0]), static_cast<float>(lT[1]), static_cast<float>(lT[2]) };
-        XMFLOAT3 scl = { static_cast<float>(lS[0]), static_cast<float>(lS[1]), static_cast<float>(lS[2]) };
-
-        float pitch = XMConvertToRadians(static_cast<float>(lR[0]));
-        float yaw = XMConvertToRadians(static_cast<float>(lR[1]));
-        float roll = XMConvertToRadians(static_cast<float>(lR[2]));
-
-        XMVECTOR q = XMQuaternionRotationRollPitchYaw(pitch, yaw, roll);
-        XMFLOAT4 rot;
-        XMStoreFloat4(&rot, q);
-
-        Transform localBindPose(pos, rot, scl);
-        currentBoneIndex = outSkeleton.AddBone(boneName, parentIndex, localBindPose);
-    }
-
-    for (int i = 0; i < node->GetChildCount(); ++i)
-    {
-        ProcessSkeletonHierarchy(node->GetChild(i), currentBoneIndex, outSkeleton);
-    }
-}
-
-/// @brief 単一ノードのアニメーションを0秒と終了秒の2点のみサンプリングする
-/// @param node 対象ノード
-/// @param boneIndex 対象ボーンID
-/// @param duration 再生時間（秒）
-/// @param outTrack 出力先ボーントラック
-void FbxModelLoader::ExtractNodeAnimation(FbxNode* node, int boneIndex, float duration, BoneTrack& outTrack)
-{
-    outTrack.boneIndex_ = boneIndex;
-
-    float sampleTimes[2] = { 0.0f, duration };
-    for (float t : sampleTimes)
-    {
-        FbxTime fbxTime;
-        fbxTime.SetSecondDouble(t);
-
-        FbxAMatrix localMatrix = node->EvaluateLocalTransform(fbxTime);
+        // ルートボーン（parentIndex == -1）は親ノード（Armature等）の軸回転・スケールを含めたワールド姿勢を取得（上下反転防止）
+        FbxAMatrix localMatrix = (parentIndex == -1)
+            ? node->EvaluateGlobalTransform(0)
+            : node->EvaluateLocalTransform(0);
 
         FbxVector4 lT = localMatrix.GetT();
         FbxQuaternion lQ = localMatrix.GetQ();
@@ -446,8 +459,12 @@ void FbxModelLoader::ExtractNodeAnimation(FbxNode* node, int boneIndex, float du
         XMFLOAT4 rot = { static_cast<float>(lQ[0]), static_cast<float>(lQ[1]), static_cast<float>(lQ[2]), static_cast<float>(lQ[3]) };
         XMFLOAT3 scl = { static_cast<float>(lS[0]), static_cast<float>(lS[1]), static_cast<float>(lS[2]) };
 
-        outTrack.translationTrack_.AddKey(t, pos, InterpolationType::Linear);
-        outTrack.rotationTrack_.AddKey(t, rot, InterpolationType::Linear);
-        outTrack.scaleTrack_.AddKey(t, scl, InterpolationType::Linear);
+        Transform localBindPose(pos, rot, scl);
+        currentBoneIndex = outSkeleton.AddBone(boneName, parentIndex, localBindPose);
+    }
+
+    for (int i = 0; i < node->GetChildCount(); ++i)
+    {
+        ProcessSkeletonHierarchy(node->GetChild(i), currentBoneIndex, outSkeleton);
     }
 }
