@@ -1,6 +1,6 @@
 #pragma once
 #include<DirectXMath.h>
-
+//ƒ{[ƒ“‚P‚Â•ª‚Ìp¨
 using namespace DirectX;
 struct Transform
 {
@@ -12,7 +12,8 @@ struct Transform
 	Transform(const XMFLOAT3& t, const XMFLOAT4& r, const XMFLOAT3& s)
 		:translation_(t), rotation_(r), scale_(s) {}
 
-
+	//TRS‚ğ‡¬‚µ‚Ä4x4s—ñ‚É•ÏŠ·
+	//Š|‚¯Z‚Ì‡˜‚Í•K‚¸S,R,T‚Ì‡
 	XMMATRIX ToMatrix(void)const
 	{
 		XMVECTOR s = XMLoadFloat3(&scale_);

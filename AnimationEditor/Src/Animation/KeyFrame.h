@@ -8,9 +8,9 @@ template<typename T>
 struct KeyFrame
 {
 	float time_ = 0.0f;	//フレーム時刻
-	T value_;	//格納する値
+	T value_;	//その時刻の値(位置ならXMFLOAT3、回転ならXMFOAT４)
 	InterpolationType interpolation_ = InterpolationType::Linear;	//補完タイプ
-	bool isUserEdited_ = false;	//ユーザー手動編集フラグ
+	bool isUserEdited_ = false;	//手動編集フラグ
 
 	KeyFrame(void) = default;
 	KeyFrame(float t, const T& val, InterpolationType interp = InterpolationType::Linear, bool isUser = false)

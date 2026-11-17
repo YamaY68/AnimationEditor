@@ -6,7 +6,7 @@
 struct Pose
 {
 	std::vector<Transform>localTransforms_;
-	//ボーン数に合わせてリサいず
+	//ボーン数に合わせてリサイズ
 	void Resize(size_t boneCount) { localTransforms_.resize(boneCount); }
 	//保持しているボーンの総数を取得
 	size_t GetBoneCoount(void)const { return localTransforms_.size(); }

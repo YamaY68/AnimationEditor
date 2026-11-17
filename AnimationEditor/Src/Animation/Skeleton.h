@@ -53,7 +53,7 @@ public:
 
 	size_t GetBoneCount(void)const { return bones_.size(); }
 	const Bone& GetBone(size_t index)const { return bones_[index]; }
-
+	Bone& GetBone(size_t index) { return bones_[index]; }
 private:
 	std::vector<Bone>bones_;
 	std::unordered_map<std::string, int>nameToIndex_;

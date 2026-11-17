@@ -43,11 +43,11 @@ void Skeleton::ComputeInverseBindMatrices(void)
 {
     const size_t count = bones_.size();
     if (count == 0)return;
-
+    //初期ポーズでの全ボーンのワールド行列を計算する
     Pose bindPose = CreateBindPose();
     std::vector<XMFLOAT4X4>bindWorld;
     ComputeWorldMatrices(bindPose, bindWorld);
-
+    //各ボーンのワールド行列の逆行列を求めて保存する
     for (size_t i = 0; i < count; ++i)
     {
         XMMATRIX w = XMLoadFloat4x4(&bindWorld[i]);
@@ -70,15 +70,18 @@ void Skeleton::ComputeWorldMatrices(const Pose& localPose, std::vector<DirectX::
 
     for (size_t i = 0; i < count; ++i)
     {
+        //自分のローカルTRSを4x4行列に変換
         XMMATRIX local = localPose[i].ToMatrix();
 
         int p = bones_[i].parentIndex_;
         if (p < 0)
         {
+            //ルートボーン無し：自分のローカル行列がそのままワールド行列になる
             worldMats[i] = local;
         }
         else
         {
+            //子ボーン：自分のローカル行列x親のワールド行列で親の動きを引き継ぐ
             worldMats[i] = XMMatrixMultiply(local, worldMats[p]);
         }
 

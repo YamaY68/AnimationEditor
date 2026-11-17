@@ -17,14 +17,18 @@ void FbxMeshModel::UpdateSkinning(const Skeleton& skeleton, const std::vector<XM
 
 	const size_t boneCount = skeleton.GetBoneCount();
 
-	//各ボーンの最終変形行列
+	//スキニングバレット行列の事前計算
+	//頂点ごとに毎回逆行列を掛けると重いので、ボーン数分だけ先に計算
 	std::vector<XMMATRIX>skinMatrices(boneCount);
 	for (size_t b = 0; b < boneCount; ++b)
 	{
 		if (b < worldMatrices.size())
 		{
+			//頂点をボーンの初期位置を原点とする空間へ引き戻す逆行列を生成
 			XMMATRIX invBind = XMLoadFloat4x4(&skeleton.GetBone(b).invBindMatrix_);
+			//現在のアニメーション姿勢でのボーンのワールド位置回転を表す行列
 			XMMATRIX currentWorld = XMLoadFloat4x4(&worldMatrices[b]);
+			//２つをかけ合わせる
 			skinMatrices[b] = XMMatrixMultiply(invBind, currentWorld);
 		}
 		else
@@ -33,7 +37,7 @@ void FbxMeshModel::UpdateSkinning(const Skeleton& skeleton, const std::vector<XM
 		}
 	}
 	
-	//全頂点の座標と法線をスキニング
+	//全頂点の座標と法線を最大４ボーンの重みでブレンド
 	for (size_t i = 0; i < vertCount; ++i)
 	{
 		const auto& src = sourceVertices_[i];
@@ -48,24 +52,27 @@ void FbxMeshModel::UpdateSkinning(const Skeleton& skeleton, const std::vector<XM
 		for (int k = 0; k < 4; ++k)
 		{
 			float weight = src.boneWeights_[k];
-			if (weight <= 0.0001f)continue;
+			if (weight <= 0.0001f)continue;	//影響度０のボーンは計算をスキップ
 
 			int bIdx = src.boneIndices_[k];
 			if (bIdx >= 0 && bIdx < static_cast<int>(boneCount))
 			{
+				//座標の変換
 				XMVECTOR transformedPos = XMVector3TransformCoord(srcPos, skinMatrices[bIdx]);
+				//法線の返還
 				XMVECTOR transformNorm = XMVector3TransformNormal(srcNorm, skinMatrices[bIdx]);
-
+				//ウェイトをかけて加算
 				skinnedPos = XMVectorAdd(skinnedPos, XMVectorScale(transformedPos, weight));
 				skinnedNorm = XMVectorAdd(skinnedNorm, XMVectorScale(transformNorm, weight));
 			}
 		}
 
+
 		//DxLibの描画頂点バッファへ書き込み
 		XMFLOAT3 outPos, outNorm;
 		XMStoreFloat3(&outPos, skinnedPos);
 		XMStoreFloat3(&outNorm, XMVector3Normalize(skinnedNorm));
-
+		//DxLibのVertex３D構造体に流す
 		skinnedVertices_[i].pos = VGet(outPos.x, outPos.y, outPos.z);
 		skinnedVertices_[i].norm = VGet(outNorm.x, outNorm.y, outNorm.z);
 		skinnedVertices_[i].dif = GetColorU8(255,255,255,255);
@@ -81,14 +88,12 @@ void FbxMeshModel::Draw(void) const
 {
 	if (skinnedVertices_.empty()) return;
 
-	SetUseBackCulling(FALSE);
 	SetTextureAddressMode(DX_TEXADDRESS_WRAP);
 	SetDrawBlendMode(DX_BLENDMODE_NOBLEND, 255);
 
 	for (const auto& sub : subMeshes_)
 	{
 		if (sub.indexCount_ == 0) continue;
-
 		size_t vertexOffset = static_cast<size_t>(sub.startIndex_);
 		if (vertexOffset >= skinnedVertices_.size()) continue;
 
@@ -102,9 +107,8 @@ void FbxMeshModel::Draw(void) const
 			FALSE
 		);
 	}
-
-	SetUseBackCulling(TRUE);
 }
+
 void FbxMeshModel::ReleaseTextures(void)
 {
 	for (auto& sub : subMeshes_)

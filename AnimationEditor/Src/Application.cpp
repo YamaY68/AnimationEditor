@@ -8,7 +8,7 @@ bool Application::Init(void)
 {
     ChangeWindowMode(TRUE);
     SetGraphMode(1280, 720, 32);
-    SetMainWindowText("Custom 3D Animation Editor");
+    SetMainWindowText("AnimationEditor");
     SetUseDirect3DVersion(DX_DIRECT3D_11);
 
     if (DxLib_Init() == -1) return false;
@@ -17,7 +17,7 @@ bool Application::Init(void)
     SetUseZBuffer3D(TRUE);
     SetWriteZBuffer3D(TRUE);
     SetCameraNearFar(1.0f, 3000.0f);
-
+    SetUseLighting(TRUE);
     // サブライト（フィルライト）設定
     subLightHandle_ = CreateDirLightHandle(VGet(0.0f, 0.5f, -1.0f));
     SetLightDifColorHandle(subLightHandle_, GetColorF(0.4f, 0.4f, 0.45f, 1.0f));
@@ -56,7 +56,7 @@ void Application::Release(void)
 
 void Application::LoadDefaultModel(void)
 {
-    LoadParentModel("Data/DefaultModel.fbx");
+    LoadParentModel("Data/DefaultModel1.fbx");
 }
 
 void Application::UpdateFrame(void)

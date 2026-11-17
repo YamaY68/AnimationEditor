@@ -38,16 +38,8 @@ public:
 private:
 	//シーンノードを深さ優先操作してスケルトン階層を構築
 	void ProcessSkeletonHierarchy(FbxNode* node, int parentIndex, Skeleton& outSkeleton);
-	/// <summary>
-	/// 単一ノードのローカルTransformからアニメーションキーをサンプリング
-	/// </summary>
-	/// <param name="node">対象ノード</param>
-	/// <param name="boneIndex">対象ボーンID</param>
-	/// <param name="duration">クリップ全体の再生時間</param>
-	/// <param name="outTrack">出力先ボーントラック</param>
-	void ExtractNodeAnimation(FbxNode* node, int boneIndex, float duration, BoneTrack& outTrack);
 
-	FbxManager* fbxManager_ = nullptr;
-	FbxIOSettings* ioSetting_ = nullptr;
-	FbxScene* fbxScene_ = nullptr;
+	FbxManager* fbxManager_ = nullptr;	//FBX　SDK全体のメモリ、オブジェクト工場
+	FbxIOSettings* ioSetting_ = nullptr;	//読み込み時の設定
+	FbxScene* fbxScene_ = nullptr;	//現在開いている１体分のFBXシーンデータ全体
 };
