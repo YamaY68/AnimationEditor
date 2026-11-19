@@ -149,6 +149,9 @@
     <ClInclude Include="Src\Edit\UndoStack.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
+    <ClInclude Include="Src\Common\EditorConstants.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="Library\ImGui\imgui.ini" />

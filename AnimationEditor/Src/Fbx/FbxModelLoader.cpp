@@ -5,7 +5,7 @@
 #include <functional>
 #include <unordered_map>
 #include <DxLib.h>
-
+#include "../Common/EditorConstants.h"
 using namespace DirectX;
 
 // FbxAMatrix を DirectX::XMFLOAT4X4 へ変換
@@ -299,7 +299,6 @@ bool FbxModelLoader::LoadMeshWithSkinning(const std::string& filepath, Skeleton&
                 }
 
                 outMeshModel.sourceVertices_.push_back(vert);
-                outMeshModel.indices_.push_back(0); // ダミー（DrawPolygon3Dでは頂点順で直接描画）
             }
         }
 
@@ -372,9 +371,8 @@ bool FbxModelLoader::LoadAnimation(const std::string& filePath, const Skeleton& 
             BoneTrack* track = outClip.GetOrCreateTrack(static_cast<int>(b));
             track->boneIndex_ = static_cast<int>(b);
             //１秒間に30回の等間隔で姿勢をベイクして取り出す
-            const float frameRate = 30.0f;
-            int frameCount = static_cast<int>(duration * frameRate);
-            float dt = 1.0f / frameRate;
+            int frameCount = static_cast<int>(duration * EditorConst::kSampleFrameRate);
+            float dt = EditorConst::kFrameDuration;
 
             for (int f = 0; f <= frameCount; ++f)
             {
@@ -392,9 +390,9 @@ bool FbxModelLoader::LoadAnimation(const std::string& filePath, const Skeleton& 
                 XMFLOAT4 rot = { static_cast<float>(lQ[0]), static_cast<float>(lQ[1]), static_cast<float>(lQ[2]), static_cast<float>(lQ[3]) };
                 XMFLOAT3 scl = { static_cast<float>(lS[0]), static_cast<float>(lS[1]), static_cast<float>(lS[2]) };
 
-                track->translationTrack_.AddKey(t, pos, InterpolationType::Linear, false);
-                track->rotationTrack_.AddKey(t, rot, InterpolationType::Linear, false);
-                track->scaleTrack_.AddKey(t, scl, InterpolationType::Linear, false);
+                track->translationTrack_.AddKey(t, pos, InterpolationType::Linear);
+                track->rotationTrack_.AddKey(t, rot, InterpolationType::Linear);
+                track->scaleTrack_.AddKey(t, scl, InterpolationType::Linear);
             }
         }
     }

@@ -1,16 +1,12 @@
 #include "ImGuiManager.h"
-#include<shellapi.h>
 #include<DxLib.h>
 #include<imgui.h>
 #include<imgui_impl_win32.h>
 #include<imgui_impl_dx11.h>
 #include<d3d11.h>
-
 //ImGui側で定義されているWin32ウィンドウプロシージャハンドラの外部定義
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
-//ドロップされたファイルパスを一時蓄積するファイル内静的キュー
-static std::vector<std::string>droppedFiles_;
 
 /// <summary>
 /// Dxライブラリに登録するカスタムウィンドウプロシージャ
@@ -22,35 +18,11 @@ static std::vector<std::string>droppedFiles_;
 /// <returns>メッセージを処理した場合は０、または処理結果、DXLib側に流す場合は０</returns>
 static LRESULT CALLBACK CustomWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
-    //ImGuiの入力バックエンドへメッセージを渡す　UI上のクリックや文字入力を処理
+    //ImGuiの入力バックエンドへメッセージを渡す(UI上のクリックや文字入力を処理)
     if (ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam))
     {
         return true;
     }
-    //エクスプローラーからウィンドウへふぁいるがドラッグ＆ドロップされた場合の処理
-    if (msg == WM_DROPFILES)
-    {
-        //ドロップ操作のハンドルを取得
-        HDROP hDrop = reinterpret_cast<HDROP>(wParam);
-        //第二引数に0xFFFFFFFFを渡すことで同時にドロップされたファイルの総数を取得
-        UINT fileCount = DragQueryFileA(hDrop, 0xFFFFFFFF, nullptr, 0);
-        //ドロップされた全ファイルについて１つずつフルパスを取り出す
-        for (UINT i = 0; i < fileCount; ++i)
-        {
-            char filePath[MAX_PATH] = "";
-            //i番目のファイルパスを文字列バッファへコピー
-            if (DragQueryFileA(hDrop, i, filePath, MAX_PATH) > 0)
-            {
-                //取り出したパスをキュー側へ追加
-                //メインループ側でPopDroppedFilesで回収
-                droppedFiles_.emplace_back(filePath);
-            }
-        }
-        //Windowsが確保したドロップ情報のメモリを解放
-        DragFinish(hDrop);
-        return 0;
-    }
-
     return 0;
 }
 
@@ -85,9 +57,6 @@ bool ImGuiManager::Initialize(HWND hWnd)
 
     //DxLibにカスタムウィンドウプロシージャを登録(マウスホイールや文字入力をImGuiへ届けるため)
     SetHookWinProc(CustomWndProc);
-
-    //OSに対してこのウィンドウがファイルのドラッグ＆ドロップを受け入れることを宣言
-    DragAcceptFiles(hWnd, TRUE);
 
     isInitialized_ = true;
     return true;
@@ -135,11 +104,4 @@ bool ImGuiManager::WantCaptureKeyboard(void)const
 {
     if (!isInitialized_)return false;
     return ImGui::GetIO().WantCaptureKeyboard;
-}
-
-std::vector<std::string>ImGuiManager::PopDroppedFiles(void)
-{
-    std::vector<std::string>result = std::move(droppedFiles_);
-    droppedFiles_.clear();
-    return result;
 }

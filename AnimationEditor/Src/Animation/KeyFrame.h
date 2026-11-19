@@ -2,57 +2,50 @@
 #include<DirectXMath.h>
 #include"Easing.h"
 
-using namespace DirectX;
 
+/// <summary>
+/// ある時刻の値1つ分(キーフレーム)
+/// </summary>
+/// <typeparam name="T">値の型(移動・スケールならXMFLOAT3、回転ならXMFLOAT4)</typeparam>
 template<typename T>
 struct KeyFrame
 {
-	float time_ = 0.0f;	//フレーム時刻
-	T value_;	//その時刻の値(位置ならXMFLOAT3、回転ならXMFOAT４)
-	InterpolationType interpolation_ = InterpolationType::Linear;	//補完タイプ
-	bool isUserEdited_ = false;	//手動編集フラグ
+	float time_ = 0.0f;	//時刻(秒)
+	T value_{};			//その時刻の値
+	InterpolationType interpolation_ = InterpolationType::Linear;	//このキーから次のキーまでの補間方法
 
 	KeyFrame(void) = default;
-	KeyFrame(float t, const T& val, InterpolationType interp = InterpolationType::Linear, bool isUser = false)
-		:time_(t), value_(val), interpolation_(interp), isUserEdited_(isUser) {
+	KeyFrame(float t, const T& val, InterpolationType interp = InterpolationType::Linear)
+		:time_(t), value_(val), interpolation_(interp) {
 	}
-
 };
+/// <summary>
+/// キー同士の値を補間する関数(値の型ごとに用意する)
+/// </summary>
 namespace KeyFrameMath
 {
 	/// <summary>
-	/// ３次元ベクトルをイージング適応して補完
+	/// 3次元ベクトル(移動・スケール)を線形補間する
 	/// </summary>
-	/// <param name="a">始点</param>
-	/// <param name="b">終点</param>
-	/// <param name="t">補間進行度</param>
-	/// <param name="type">補間タイプ</param>
-	/// <returns>補間後ベクトル</returns>
-	inline XMFLOAT3 Interpolate(const XMFLOAT3& a, const XMFLOAT3& b, float t, InterpolationType type)
+	/// <param name="t">キー間の進み具合(0～1)。補間方法の曲線はこの中でかける</param>
+	inline DirectX::XMFLOAT3 Interpolate(const DirectX::XMFLOAT3& a, const DirectX::XMFLOAT3& b, float t, InterpolationType type)
 	{
+		using namespace DirectX;
 		float easedT = Easing::Evaluate(t, type);
-		XMVECTOR vA = XMLoadFloat3(&a);
-		XMVECTOR vB = XMLoadFloat3(&b);
 		XMFLOAT3 out;
-		XMStoreFloat3(&out, XMVectorLerp(vA, vB, easedT));
+		XMStoreFloat3(&out, XMVectorLerp(XMLoadFloat3(&a), XMLoadFloat3(&b), easedT));
 		return out;
 	}
 
 	/// <summary>
-	/// クォータニオンをイージングして球面補間
+	/// クォータニオン(回転)を球面線形補間する
 	/// </summary>
-	/// <param name="a">始点クォータニオン</param>
-	/// <param name="b">終点クォータニオン</param>
-	/// <param name="t">補間進行度</param>
-	/// <param name="type">補間タイプ</param>
-	/// <returns>補間後クォータニオン</returns>
-	inline XMFLOAT4 Interpolate(const XMFLOAT4& a, const XMFLOAT4& b, float t, InterpolationType type)
+	inline DirectX::XMFLOAT4 Interpolate(const DirectX::XMFLOAT4& a, const DirectX::XMFLOAT4& b, float t, InterpolationType type)
 	{
+		using namespace DirectX;
 		float easedT = Easing::Evaluate(t, type);
-		XMVECTOR qA = XMLoadFloat4(&a);
-		XMVECTOR qB = XMLoadFloat4(&b);
 		XMFLOAT4 out;
-		XMStoreFloat4(&out, XMQuaternionSlerp(qA, qB, easedT));
+		XMStoreFloat4(&out, XMQuaternionSlerp(XMLoadFloat4(&a), XMLoadFloat4(&b), easedT));
 		return out;
 	}
 }

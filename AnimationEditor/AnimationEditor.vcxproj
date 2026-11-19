@@ -163,6 +163,7 @@
     <ClInclude Include="Library\ImGui\imstb_textedit.h" />
     <ClInclude Include="Library\ImGui\imstb_truetype.h" />
     <ClInclude Include="Src\Application.h" />
+    <ClInclude Include="Src\Common\EditorConstants.h" />
     <ClInclude Include="Src\UI\InspectorView.h" />
     <ClInclude Include="Src\UI\ImGuiManager.h" />
     <ClInclude Include="Src\Animation\AnimationClip.h" />

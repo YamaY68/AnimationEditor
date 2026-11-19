@@ -4,7 +4,7 @@
 #include<algorithm>
 #include<cmath>
 #include"../Edit/UndoStack.h"
-
+#include"../Common/EditorConstants.h"
 using namespace DirectX;
 
 //角度を -180?180度 の範囲に折り返す
@@ -223,12 +223,17 @@ bool InspectorView::Draw(const Skeleton& skeleton, Pose& inOutPose, AnimationCli
 				ImGui::SameLine();
 				if (ImGui::Button("Limit Edit Range", ImVec2(-1, 0)))
 				{
-					float dur = currentClip->duration_;
-					float before = std::max(0.0f, currentTime - limitRangeSec_);
-					float after = (dur > 0.0f) ? std::min(dur, currentTime + limitRangeSec_) : currentTime + limitRangeSec_;
+					undoStack.Record(clipIndex, *currentClip);
 
-					if (before < currentTime - 0.001f) currentClip->SetZeroOffsetKey(selectedBoneIndex_, before);
-					if (after > currentTime + 0.001f)  currentClip->SetZeroOffsetKey(selectedBoneIndex_, after);
+					//前後の時刻(クリップの範囲内に収める)
+					const float dur = currentClip->duration_;
+					const float before = std::max(0.0f, currentTime - limitRangeSec_);
+					const float after = (dur > 0.0f) ? std::min(dur, currentTime + limitRangeSec_) : currentTime + limitRangeSec_;
+
+					//前後の0キーが今の時刻と重なる場合(クリップの端にいるとき)は打たない
+					const float eps = EditorConst::kKeyTimeEpsilon;
+					if (before < currentTime - eps) currentClip->SetZeroOffsetKey(selectedBoneIndex_, before);
+					if (after > currentTime + eps)  currentClip->SetZeroOffsetKey(selectedBoneIndex_, after);
 					keyEdited = true;
 				}
 				ImGui::Spacing();
@@ -252,13 +257,13 @@ bool InspectorView::Draw(const Skeleton& skeleton, Pose& inOutPose, AnimationCli
 					ImGui::TextDisabled("In Time:Not Set");
 				}
 
-				//現在時刻をOut点をして、In点～Out点間の既存キーを一掃して補間置換
+				//今の時刻をOut点にして、In点～Out点の修正分を置き換える
 				if (ImGui::Button("Set Out&Replace Range", ImVec2(-1, 28)))
 				{
-					rangeEndTime_ = currentTime;
+					//In点が未設定なら、今の姿勢を始点にする
 					Transform startPose = hasRangeStartPose_ ? rangeStartTrs_ : trs;
 					undoStack.Record(clipIndex, *currentClip);
-					currentClip->ReplaceOffsetRange(selectedBoneIndex_, rangeStartTime_, rangeEndTime_, startPose, trs, skeleton);
+					currentClip->ReplaceOffsetRange(selectedBoneIndex_, rangeStartTime_, currentTime, startPose, trs, skeleton);
 
 					hasRangeStartPose_ = false;
 					keyEdited = true;

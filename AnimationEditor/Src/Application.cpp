@@ -3,6 +3,7 @@
 #include<filesystem>
 #include<algorithm>
 #include<cmath>
+#include<cctype>
 #include"Animation/Skeleton.h"
 bool Application::Init(void)
 {
@@ -104,20 +105,18 @@ void Application::UpdateFrame(void)
 
 void Application::ProcessDroppedFiles(void)
 {
-    std::vector<std::string> droppedFiles = imguiManager_.PopDroppedFiles();
-    for (const auto& file : droppedFiles)
+    //DxLibが受け取ったファイルを1つずつ取り出す(取り出したものはDxLib側のリストから消える)
+    char path[MAX_PATH];
+    while (GetDragFilePath(path, sizeof(path)) == 0)
     {
-        OutputDebugStringA(("[Drop] 受信: " + file + "\n").c_str());
+        //拡張子は小文字にそろえて比較する(.FBX や .Fbx も受け付ける)
+        std::string ext = std::filesystem::path(path).extension().string();
+        std::transform(ext.begin(), ext.end(), ext.begin(),
+            [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 
-        std::string ext = std::filesystem::path(file).extension().string();
-        if (ext == ".fbx" || ext == ".FBX")
+        if (ext == ".fbx" && !LoadParentModel(path))
         {
-            bool ok = LoadParentModel(file);
-            OutputDebugStringA(ok ? "[Drop] 読み込み成功\n" : "[Drop] 読み込み失敗\n");
-        }
-        else
-        {
-            OutputDebugStringA(("[Drop] 拡張子が対象外: " + ext + "\n").c_str());
+            OutputDebugStringA(("[Load] 読み込み失敗: " + std::string(path) + "\n").c_str());
         }
     }
 }
@@ -126,8 +125,6 @@ bool Application::LoadParentModel(const std::string& filePath)
     Skeleton newSkeleton;
     FbxMeshModel newMesh;
 
-    OutputDebugStringA("[Load] LoadSkeleton 失敗\n");          // 1つ目
-    OutputDebugStringA("[Load] LoadMeshWithSkinning 失敗\n");   // 2つ目
 
     if (!loader_.LoadSkeleton(filePath, newSkeleton))
     {

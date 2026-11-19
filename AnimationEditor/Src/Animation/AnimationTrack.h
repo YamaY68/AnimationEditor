@@ -1,10 +1,11 @@
 #pragma once
 #include<vector>
 #include<algorithm>
+#include<cmath>
 #include"KeyFrame.h"
 #include"../Common/Transform.h"
 #include"Easing.h"
-
+#include"../Common/EditorConstants.h"
 
 template <typename T>
 class AnimationTrack
@@ -20,82 +21,75 @@ public:
 	/// <param name="value">値</param>
 	/// <param name="interp">補間タイプ</param>
 	/// <param name="isUser">手動編集フラグ</param>
-	void AddKey(float time, const T& value, InterpolationType interp = InterpolationType::Linear, bool isUser = false)
+	void AddKey(float time, const T& value, InterpolationType interp = InterpolationType::Linear)
 	{
-		keys_.emplace_back(time, value, interp, isUser);
+		keys_.emplace_back(time, value, interp);
 		std::sort(keys_.begin(), keys_.end(), [](const KeyFrame<T>& a, const KeyFrame<T>& b)
 			{
-				return a.time_ < b.time_; 
+				return a.time_ < b.time_;
 			});
 	}
 
 	/// <summary>
-	/// 指定時刻のキーフレームを上書き
+	/// 指定時刻のキーを探す
 	/// </summary>
-	/// <param name="time">フレーム時刻</param>
-	/// <param name="value">格納する値</param>
-	/// <param name="interp">補間タイプ</param>
-	void SetKey(float time, const T& value, 
-		InterpolationType interp = InterpolationType::Linear)
+	/// <returns>見つかったキー(無ければnullptr)</returns>
+	const KeyFrame<T>* FindKey(float time)const
 	{
-		const float epsilon = 0.001f;
-		//既存の中にほぼ一致するものがあるか探索
-		for (auto& k : keys_)
-		{
-			//同じ時刻がある場合は上書き
-			if (std::abs(k.time_ - time) < epsilon)
+		auto it = std::find_if(keys_.begin(), keys_.end(), [time](const KeyFrame<T>& k)
 			{
-				k.value_ = value;
-				k.isUserEdited_ = true;
-				return;
-			}
-		}
-		AddKey(time, value, interp, true);
+				return std::abs(k.time_ - time) < EditorConst::kKeyTimeEpsilon;
+			});
+		return (it != keys_.end()) ? &(*it) : nullptr;
 	}
-
-	//トラックにキーが存在するか確認する
-	bool HasKeys(void)const
+	KeyFrame<T>* FindKey(float time)
 	{
-		return !keys_.empty();
+		//const版と同じ処理なので、const版を呼んで結果のconstを外す
+		return const_cast<KeyFrame<T>*>(static_cast<const AnimationTrack&>(*this).FindKey(time));
 	}
 
-	//指定時刻のキーを削除(削除したらtrue)
+	/// <summary>
+	/// 指定時刻のキーの値を上書きする。無ければ新しく追加する
+	/// 既存のキーの補間方法は変えない(オートキーで上書きしたときに補間方法が戻らないように)
+	/// </summary>
+	/// <param name="interp">新しく追加するときの補間方法</param>
+	void SetKey(float time, const T& value, InterpolationType interp = InterpolationType::Linear)
+	{
+		if (KeyFrame<T>* key = FindKey(time))
+		{
+			key->value_ = value;
+			return;
+		}
+		AddKey(time, value, interp);
+	}
+
+	//指定時刻のキーを削除する(削除したらtrue)
 	bool RemoveKey(float time)
 	{
-		const float epsilon = 0.001f;
-		size_t oldSize = keys_.size();
-		keys_.erase(std::remove_if(keys_.begin(), keys_.end(), [=](const KeyFrame<T>& k)
+		const size_t oldSize = keys_.size();
+		keys_.erase(std::remove_if(keys_.begin(), keys_.end(), [time](const KeyFrame<T>& k)
 			{
-				return std::abs(k.time_ - time) < epsilon;
+				return std::abs(k.time_ - time) < EditorConst::kKeyTimeEpsilon;
 			}), keys_.end());
 		return keys_.size() != oldSize;
 	}
-
-	//指定時刻のキーの補間方法を取得(キーが無ければfalse)
-	bool GetInterpolation(float time, InterpolationType& out) const
+	//指定時刻のキーの補間方法を取得する(キーが無ければfalse)
+	bool GetInterpolation(float time, InterpolationType& out)const
 	{
-		const float epsilon = 0.001f;
-		for (const auto& k : keys_)
+		if (const KeyFrame<T>* key = FindKey(time))
 		{
-			if (std::abs(k.time_ - time) < epsilon)
-			{
-				out = k.interpolation_;
-				return true;
-			}
+			out = key->interpolation_;
+			return true;
 		}
 		return false;
 	}
 
-	//指定時刻のキーの補間方法を設定
+	//指定時刻のキーの補間方法を設定する(キーが無ければ何もしない)
 	void SetInterpolation(float time, InterpolationType type)
 	{
-		const float epsilon = 0.001f;
-		for (auto& k : keys_)
+		if (KeyFrame<T>* key = FindKey(time))
 		{
-			if (std::abs(k.time_ - time) < epsilon)
-			{
-				k.interpolation_ = type;
-			}
+			key->interpolation_ = type;
 		}
 	}
 
@@ -107,15 +101,15 @@ public:
 	/// <param name="startVal">始点値</param>
 	/// <param name="endVal">終点値</param>
 	/// <param name="interp">補間タイプ</param>
-	void SetRangeKeys(float rangeStart, float rangeEnd, 
+	void SetRangeKeys(float rangeStart, float rangeEnd,
 		const T& startVal, const T& endVal,
 		InterpolationType interp = InterpolationType::Linear)
 	{
-		const float eps = 0.001f;
+		const float eps = EditorConst::kKeyTimeEpsilon;		
 		//指定区間の内側にあるキーフレームを全削除
 		keys_.erase(std::remove_if(keys_.begin(), keys_.end(), [=](const KeyFrame<T>& k)
 			{
-				return (k.time_ >= rangeStart - eps && k.time_ <= rangeEnd + eps); 
+				return (k.time_ >= rangeStart - eps && k.time_ <= rangeEnd + eps);
 			}), keys_.end());
 		SetKey(rangeStart, startVal, interp);
 		SetKey(rangeEnd, endVal, interp);
@@ -137,7 +131,7 @@ public:
 		auto it = std::upper_bound(keys_.begin(), keys_.end(), time,
 			[](float t, const KeyFrame<T>& key)
 			{
-				return t < key.time_; 
+				return t < key.time_;
 			});
 
 		size_t nextIdx = std::distance(keys_.begin(), it);
@@ -185,6 +179,14 @@ struct BoneTrack
 		translationTrack_.SetKey(time, transform.translation_);
 		rotationTrack_.SetKey(time, transform.rotation_);
 		scaleTrack_.SetKey(time, transform.scale_);
+	}
+
+	//指定時刻にキーがあるか
+	bool HasKeyframe(float time)const
+	{
+		return translationTrack_.FindKey(time) != nullptr
+			|| rotationTrack_.FindKey(time) != nullptr
+			|| scaleTrack_.FindKey(time) != nullptr;
 	}
 
 	//指定時刻のTRSキーを削除

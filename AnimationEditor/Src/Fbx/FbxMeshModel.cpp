@@ -1,11 +1,12 @@
 #include "FbxMeshModel.h"
 
+using namespace DirectX;
 FbxMeshModel::~FbxMeshModel(void)
 {
 	ReleaseTextures();
 }
 
-void FbxMeshModel::UpdateSkinning(const Skeleton& skeleton, const std::vector<XMFLOAT4X4>& worldMatrices)
+void FbxMeshModel::UpdateSkinning(const Skeleton& skeleton, const std::vector<DirectX::XMFLOAT4X4>& worldMatrices)
 {
 	const size_t vertCount = sourceVertices_.size();
 	if (vertCount == 0)return;

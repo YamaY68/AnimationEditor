@@ -46,9 +46,6 @@ public:
     //再生、一時停止状態を切り替える
     void SetPlaying(bool play) { isPlaying_ = play; }
 
-    //再生速度倍率を取得
-    float GetPlaybackSpeed(void) const { return playbackSpeed_; }
-
     //オートキーが有効か
     bool IsAutoKey(void) const { return autoKey_; }
 private:

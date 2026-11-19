@@ -159,19 +159,7 @@ void AnimationClip::SetZeroOffsetKey(int boneIndex, float time)
 bool AnimationClip::HasOffsetKey(int boneIndex, float time) const
 {
     const BoneTrack* track = FindOffsetTrack(boneIndex);
-    if (!track) return false;
-
-    auto hasKey = [time](const auto& keys)
-        {
-            for (const auto& k : keys)
-            {
-                if (std::abs(k.time_ - time) < 0.001f) return true;
-            }
-            return false;
-        };
-    return hasKey(track->translationTrack_.keys_)
-        || hasKey(track->rotationTrack_.keys_)
-        || hasKey(track->scaleTrack_.keys_);
+    return track != nullptr && track->HasKeyframe(time);
 }
 
 bool AnimationClip::GetOffsetInterpolation(int boneIndex, float time, InterpolationType& out) const

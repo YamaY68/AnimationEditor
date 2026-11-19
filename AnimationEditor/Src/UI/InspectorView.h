@@ -27,7 +27,6 @@ private:
 	void DrawBoneNode(int boneIndex, const Skeleton& skeleton);
     int selectedBoneIndex_ = -1;    // 現在選択されているボーンID
     float rangeStartTime_ = 0.0f;  // 区間置換の開始時刻
-    float rangeEndTime_ = 0.5f;  // 区間置換の終了時刻
     Transform rangeStartTrs_;         // In点に記録しておくポーズ
     bool hasRangeStartPose_ = false; // In点のポーズがすでに記録済みかどうかのフラグ
     float limitRangeSec_ = 0.3f;     // Limit Edit Rangeで0キーを打つ前後の幅(秒)

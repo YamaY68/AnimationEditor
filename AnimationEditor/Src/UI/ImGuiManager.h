@@ -1,7 +1,6 @@
 #pragma once
 #include <Windows.h>
-#include<vector>
-#include<string>
+
 
 class ImGuiManager
 {
@@ -20,8 +19,6 @@ public:
 	bool WantCaptureMouse(void)const;
 
 	bool WantCaptureKeyboard(void) const;
-
-	std::vector<std::string>PopDroppedFiles(void);
 
 private:
 	bool isInitialized_ = false;

@@ -4,6 +4,7 @@
 #include<cmath>
 #include<algorithm>
 #include"FileDialogHelper.h"
+#include"../Common/EditorConstants.h"
 
 MenuActionType TimeLineView::Draw(HWND hWnd, const std::vector<AnimationClip>& clips, int& currentClipIndex, float& inOutTime, float deltaTime, bool& outEnableBlend, int& outTargetClipIndex, float& outBlendWeight, int selectedBoneIndex, std::string& outSelectedFilePath)
 {
@@ -194,16 +195,16 @@ MenuActionType TimeLineView::Draw(HWND hWnd, const std::vector<AnimationClip>& c
     std::sort(keyTimes.begin(), keyTimes.end());
     keyTimes.erase(std::unique(keyTimes.begin(), keyTimes.end(), [](float a, float b)
         {
-            return std::abs(a - b) < 0.005f;
+            return std::abs(a - b) < EditorConst::kKeyTimeEpsilon;
         }), keyTimes.end());
 
-    const float keyEps = 0.005f;
+    const float keyEps = EditorConst::kKeyTimeEpsilon;
 
     //←→：前後のキーへ移動　Shift+←→：1フレーム移動(どちらも端でループ)
     if (!ImGui::GetIO().WantTextInput)
     {
         const bool shift = ImGui::GetIO().KeyShift;
-        const float frameStep = 1.0f / 30.0f;
+        const float frameStep = EditorConst::kFrameDuration;
 
         if (ImGui::IsKeyPressed(ImGuiKey_RightArrow))
         {
