@@ -140,3 +140,37 @@ Transform AnimationClip::Difference(const Transform& base, const Transform& targ
         safeDiv(target.scale_.z, base.scale_.z) };
     return r;
 }
+
+bool AnimationClip::RemoveOffsetKey(int boneIndex, float time)
+{
+    for (auto& track : offsetTracks_)
+    {
+        if (track.boneIndex_ == boneIndex) return track.RemoveKeyframe(time);
+    }
+    return false;
+}
+
+void AnimationClip::SetZeroOffsetKey(int boneIndex, float time)
+{
+    //Transformの初期値は「移動0・回転なし・スケール1」＝修正なし
+    GetOrCreateOffsetTrack(boneIndex)->SetKeyframe(time, Transform{});
+}
+
+
+bool AnimationClip::HasOffsetKey(int boneIndex, float time) const
+{
+    const BoneTrack* track = FindOffsetTrack(boneIndex);
+    if (!track) return false;
+
+    auto hasKey = [time](const auto& keys)
+        {
+            for (const auto& k : keys)
+            {
+                if (std::abs(k.time_ - time) < 0.001f) return true;
+            }
+            return false;
+        };
+    return hasKey(track->translationTrack_.keys_)
+        || hasKey(track->rotationTrack_.keys_)
+        || hasKey(track->scaleTrack_.keys_);
+}

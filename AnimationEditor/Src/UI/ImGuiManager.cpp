@@ -64,7 +64,6 @@ bool ImGuiManager::Initialize(HWND hWnd)
 
     //ImGuiの基本設定
     ImGuiIO& io = ImGui::GetIO();
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     ImGui::StyleColorsDark();
 
     //DxLibが内部で作成、保持しているDirect3D11のデバイスとデバイスコンテキストを取得

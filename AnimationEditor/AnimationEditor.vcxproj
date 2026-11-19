@@ -151,6 +151,7 @@
     <ClCompile Include="Src\Camera\Camera.cpp" />
     <ClCompile Include="Src\main.cpp" />
     <ClCompile Include="Src\UI\TimeLineView.cpp" />
+    <ClCompile Include="Src\Edit\UndoStack.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Library\ImGui\imconfig.h" />
@@ -177,6 +178,7 @@
     <ClInclude Include="Src\Common\Transform.h" />
     <ClInclude Include="Src\UI\FileDialogHelper.h" />
     <ClInclude Include="Src\UI\TimeLineView.h" />
+    <ClInclude Include="Src\Edit\UndoStack.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Library\ImGui\imgui.ini" />

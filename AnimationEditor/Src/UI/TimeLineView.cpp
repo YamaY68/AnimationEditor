@@ -1,9 +1,9 @@
 #include "TimeLineView.h"
 #include<imgui.h>
+#include<imgui_internal.h>
 #include<cmath>
 #include<algorithm>
 #include"FileDialogHelper.h"
-
 
 MenuActionType TimeLineView::Draw(HWND hWnd, const std::vector<AnimationClip>& clips, int& currentClipIndex, float& inOutTime, float deltaTime, bool& outEnableBlend, int& outTargetClipIndex, float& outBlendWeight, int selectedBoneIndex, std::string& outSelectedFilePath)
 {
@@ -127,6 +127,10 @@ MenuActionType TimeLineView::Draw(HWND hWnd, const std::vector<AnimationClip>& c
         playbackSpeed_ = 1.0f;
     }
 
+    //オートキーのON/OFF
+    ImGui::SameLine();
+    ImGui::Checkbox("Auto Key", &autoKey_);
+
     //複数クリップ読み込みのモーションブレンド設定UI
     if (clips.size() >= 2)
     {
@@ -167,59 +171,110 @@ MenuActionType TimeLineView::Draw(HWND hWnd, const std::vector<AnimationClip>& c
         outEnableBlend = false;
     }
 
-    //シークバーとキーフレームマーカーのオーバーレイ描画
+    //シークバー
     ImGui::SetNextItemWidth(-1.0f);
     ImGui::SliderFloat("##TimeSeek", &inOutTime, 0.0f, (duration > 0.0f ? duration : 1.0f), "%.3f s");
 
-    //シークバーの画面座標領域を取得
     ImVec2 barMin = ImGui::GetItemRectMin();
     ImVec2 barMax = ImGui::GetItemRectMax();
     float barWidth = barMax.x - barMin.x;
     float barHeight = barMax.y - barMin.y;
-    //再生時間とバーの幅が有効な場合のみマーカーを描画
-    if (duration > 0.0f && barWidth > 0.0f)
-    {
-        //シークバー背景やつまみの手前に確実に描画するためにForegroundDrawListを仕様
-        ImDrawList* drawList = ImGui::GetForegroundDrawList();
-        //マーカーを描画する時刻を収集する配列
-        std::vector<float>keyTimes;
 
-        // クリップ内の全ボーントラックを走査
-        for (const auto& track : activeClip.offsetTracks_)
+    //修正分のキーの時刻を収集(ボーン選択中はそのボーンのみ、未選択なら全ボーン)
+    std::vector<float> keyTimes;
+    for (const auto& track : activeClip.offsetTracks_)
+    {
+        if (selectedBoneIndex == -1 || track.boneIndex_ == selectedBoneIndex)
         {
-            // ボーン未選択(-1)なら全ボーン、選択中ならそのボーンのトラックのみ対象にする
-            if (selectedBoneIndex == -1 || track.boneIndex_ == selectedBoneIndex)
+            for (const auto& k : track.translationTrack_.keys_) keyTimes.push_back(k.time_);
+            for (const auto& k : track.rotationTrack_.keys_)    keyTimes.push_back(k.time_);
+            for (const auto& k : track.scaleTrack_.keys_)       keyTimes.push_back(k.time_);
+        }
+    }
+    std::sort(keyTimes.begin(), keyTimes.end());
+    keyTimes.erase(std::unique(keyTimes.begin(), keyTimes.end(), [](float a, float b)
+        {
+            return std::abs(a - b) < 0.005f;
+        }), keyTimes.end());
+
+    const float keyEps = 0.005f;
+
+    //←→：前後のキーへ移動　Shift+←→：1フレーム移動(どちらも端でループ)
+    if (!ImGui::GetIO().WantTextInput)
+    {
+        const bool shift = ImGui::GetIO().KeyShift;
+        const float frameStep = 1.0f / 30.0f;
+
+        if (ImGui::IsKeyPressed(ImGuiKey_RightArrow))
+        {
+            isPlaying_ = false;
+            if (shift)
             {
-                // 手動編集フラグ（isUserEdited_ == true）が立っているキーの時刻のみを収集
-                for (const auto& k : track.translationTrack_.keys_) { if (k.isUserEdited_) keyTimes.push_back(k.time_); }
-                for (const auto& k : track.rotationTrack_.keys_) { if (k.isUserEdited_) keyTimes.push_back(k.time_); }
-                for (const auto& k : track.scaleTrack_.keys_) { if (k.isUserEdited_) keyTimes.push_back(k.time_); }
+                //終端を越えたら先頭へ
+                inOutTime += frameStep;
+                if (inOutTime > duration + keyEps) inOutTime = 0.0f;
+                else if (inOutTime > duration) inOutTime = duration;
+            }
+            else if (!keyTimes.empty())
+            {
+                //次のキーが無ければ最初のキーへ
+                auto it = std::upper_bound(keyTimes.begin(), keyTimes.end(), inOutTime + keyEps);
+                inOutTime = (it != keyTimes.end()) ? *it : keyTimes.front();
             }
         }
-
-        //時刻準にソートし、ほぼ同時刻の重複マーカーを間引き
-        std::sort(keyTimes.begin(), keyTimes.end());
-        keyTimes.erase(std::unique(keyTimes.begin(), keyTimes.end(), [](float a, float b)
+        if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow))
+        {
+            isPlaying_ = false;
+            if (shift)
             {
-                return std::abs(a - b) < 0.005f; 
-            }), keyTimes.end());
+                //先頭を越えたら終端へ
+                inOutTime -= frameStep;
+                if (inOutTime < -keyEps) inOutTime = duration;
+                else if (inOutTime < 0.0f) inOutTime = 0.0f;
+            }
+            else if (!keyTimes.empty())
+            {
+                //前のキーが無ければ最後のキーへ
+                auto it = std::lower_bound(keyTimes.begin(), keyTimes.end(), inOutTime - keyEps);
+                inOutTime = (it != keyTimes.begin()) ? *(--it) : keyTimes.back();
+            }
+        }
+    }
 
+    //キーマーカーの描画とクリック選択
+    if (duration > 0.0f && barWidth > 0.0f)
+    {
+        ImDrawList* drawList = ImGui::GetForegroundDrawList();
         float centerY = barMin.y + barHeight * 0.5f;
+        ImVec2 mouse = ImGui::GetMousePos();
+        bool clicked = ImGui::IsMouseClicked(ImGuiMouseButton_Left);
 
-        //各キーフレーム時刻に黄色いひし形マーカーを描画
         for (float kt : keyTimes)
         {
             float normTime = std::clamp(kt / duration, 0.0f, 1.0f);
             float posX = barMin.x + normTime * barWidth;
 
-            float r = 5.0f;
+            //マーカーがクリックされたらその時刻へジャンプ
+            const float hitR = 7.0f;
+            if (clicked && std::abs(mouse.x - posX) <= hitR && std::abs(mouse.y - centerY) <= hitR)
+            {
+                inOutTime = kt;
+                isPlaying_ = false;
+                ImGui::ClearActiveID();   //下のシークバーがドラッグ状態にならないようにする
+            }
+
+            //再生位置にあるキーは選択中として白く大きく描く
+            bool isCurrent = std::abs(kt - inOutTime) < keyEps;
+            float r = isCurrent ? 7.0f : 5.0f;
+            ImU32 fill = isCurrent ? IM_COL32(255, 255, 255, 255) : IM_COL32(255, 230, 0, 255);
+
             ImVec2 diamond[4] = {
                 ImVec2(posX, centerY - r),
                 ImVec2(posX + r, centerY),
                 ImVec2(posX, centerY + r),
                 ImVec2(posX - r, centerY)
             };
-            drawList->AddConvexPolyFilled(diamond, 4, IM_COL32(255, 230, 0, 255));
+            drawList->AddConvexPolyFilled(diamond, 4, fill);
             drawList->AddPolyline(diamond, 4, IM_COL32(0, 0, 0, 255), ImDrawFlags_Closed, 1.5f);
         }
     }

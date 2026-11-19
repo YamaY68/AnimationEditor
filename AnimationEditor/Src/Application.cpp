@@ -1,9 +1,9 @@
 #include "Application.h"
+#include<imgui.h>
 #include<filesystem>
 #include<algorithm>
 #include<cmath>
 #include"Animation/Skeleton.h"
-
 bool Application::Init(void)
 {
     ChangeWindowMode(TRUE);
@@ -66,7 +66,7 @@ void Application::UpdateFrame(void)
     ProcessDroppedFiles();
 
     imguiManager_.BeginFrame();
-
+    HandleUndoRedo();
     camera_.Update(!imguiManager_.WantCaptureMouse());
     camera_.ApplyToDxLib();
 
@@ -148,6 +148,7 @@ bool Application::LoadParentModel(const std::string& filePath)
     meshLoaded_ = true;
 
     clips_.clear();
+    undoStack_.Clear();
     currentClipIndex_ = 0;
     targetClipIndex_ = 0;
     playbackTime_ = 0.0f;
@@ -192,8 +193,15 @@ void Application::UpdateAndRenderModel(void)
     {
         activeClipPtr = &clips_[currentClipIndex_];
     }
+    bool poseEdited = false;
+    bool keyEdited = inspectorView_.Draw(skeleton_, finalPose_, activeClipPtr, playbackTime_,
+        undoStack_, currentClipIndex_, timelineView_.IsAutoKey(), poseEdited);
 
-    bool keyEdited = inspectorView_.Draw(skeleton_, finalPose_, activeClipPtr, playbackTime_);
+    //姿勢をいじったら再生を止める(再生中だと次のフレームで上書きされるため)
+    if (poseEdited)
+    {
+        timelineView_.SetPlaying(false);
+    }
     bool timeChanged = (std::abs(playbackTime_ - prevPlaybackTime_) > 0.0001f);
 
     if (activeClipPtr)
@@ -259,4 +267,27 @@ void Application::DrawGridAndAxes(float size, int divisions) const
     DrawLine3D(VGet(0.0f, 0.0f, 0.0f), VGet(10.0f, 0.0f, 0.0f), GetColor(255, 0, 0));
     DrawLine3D(VGet(0.0f, 0.0f, 0.0f), VGet(0.0f, 10.0f, 0.0f), GetColor(0, 255, 0));
     DrawLine3D(VGet(0.0f, 0.0f, 0.0f), VGet(0.0f, 0.0f, 10.0f), GetColor(0, 0, 255));
+}
+
+
+void Application::HandleUndoRedo(void)
+{
+    const ImGuiIO& io = ImGui::GetIO();
+    //文字入力中やCtrlが押されていないときは何もしない
+    if (io.WantTextInput || !io.KeyCtrl) return;
+
+    bool undo = ImGui::IsKeyPressed(ImGuiKey_Z) && !io.KeyShift;
+    bool redo = ImGui::IsKeyPressed(ImGuiKey_Y) || (ImGui::IsKeyPressed(ImGuiKey_Z) && io.KeyShift);
+
+    int clipIndex = currentClipIndex_;
+    bool changed = false;
+    if (undo)      changed = undoStack_.Undo(clips_, clipIndex);
+    else if (redo) changed = undoStack_.Redo(clips_, clipIndex);
+
+    if (changed)
+    {
+        //戻した操作のクリップに切り替え、ポーズを再計算させる
+        currentClipIndex_ = clipIndex;
+        prevPlaybackTime_ = -1.0f;
+    }
 }

@@ -60,6 +60,18 @@ public:
 		return !keys_.empty();
 	}
 
+	//指定時刻のキーを削除(削除したらtrue)
+	bool RemoveKey(float time)
+	{
+		const float epsilon = 0.001f;
+		size_t oldSize = keys_.size();
+		keys_.erase(std::remove_if(keys_.begin(), keys_.end(), [=](const KeyFrame<T>& k)
+			{
+				return std::abs(k.time_ - time) < epsilon;
+			}), keys_.end());
+		return keys_.size() != oldSize;
+	}
+
 	/// <summary>
 	/// 指定区間の補間キーを設定する
 	/// </summary>
@@ -146,6 +158,15 @@ struct BoneTrack
 		translationTrack_.SetKey(time, transform.translation_);
 		rotationTrack_.SetKey(time, transform.rotation_);
 		scaleTrack_.SetKey(time, transform.scale_);
+	}
+
+	//指定時刻のTRSキーを削除
+	bool RemoveKeyframe(float time)
+	{
+		bool removed = translationTrack_.RemoveKey(time);
+		removed |= rotationTrack_.RemoveKey(time);
+		removed |= scaleTrack_.RemoveKey(time);
+		return removed;
 	}
 
 	/// <summary>

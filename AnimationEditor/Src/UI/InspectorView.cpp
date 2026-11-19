@@ -3,7 +3,17 @@
 #include<DirectXMath.h>
 #include<algorithm>
 #include<cmath>
+#include"../Edit/UndoStack.h"
+
 using namespace DirectX;
+
+//角度を -180?180度 の範囲に折り返す
+static float WrapDegrees(float deg)
+{
+	deg = std::fmod(deg + 180.0f, 360.0f);
+	if (deg < 0.0f) deg += 360.0f;
+	return deg - 180.0f;
+}
 static XMFLOAT3 QuaternionToEuler(const XMFLOAT4& q)
 {
 	//X軸回りの回転角(Pitch)
@@ -36,10 +46,12 @@ static XMFLOAT4 EulerToQuaternion(const XMFLOAT3& euler)
 	return out;
 }
 
-bool InspectorView::Draw(const Skeleton& skeleton, Pose& inOutPose, AnimationClip* currentClip, float currentTime)
+bool InspectorView::Draw(const Skeleton& skeleton, Pose& inOutPose, AnimationClip* currentClip, float currentTime,
+	UndoStack& undoStack, int clipIndex, bool autoKey, bool& outPoseEdited)
 {
 	//このフレームでキーフレームの追加、更新が行われたか記録するフラグ
 	bool keyEdited = false;
+	outPoseEdited = false;
 
 	ImGui::SetNextWindowSize(ImVec2(340, 560), ImGuiCond_FirstUseEver);
 	ImGui::Begin("Inspector");
@@ -89,19 +101,50 @@ bool InspectorView::Draw(const Skeleton& skeleton, Pose& inOutPose, AnimationCli
 			//選択ボーンのローカルTransformへ参照を取得
 			Transform& trs = inOutPose[selectedBoneIndex_];
 
+			//姿勢が変更されたときの共通処理(オートキー)
+			auto onPoseChanged = [&]()
+				{
+					outPoseEdited = true;
+					if (autoKey && currentClip != nullptr)
+					{
+						//ドラッグ1回につきUndo履歴は1つだけ積む
+						if (!editRecorded_)
+						{
+							undoStack.Record(clipIndex, *currentClip);
+							editRecorded_ = true;
+						}
+						currentClip->SetOffsetKey(selectedBoneIndex_, currentTime, trs, skeleton);
+						keyEdited = true;
+					}
+				};
+
 			//平行移動
 			float t[3] = { trs.translation_.x,trs.translation_.y,trs.translation_.z };
 			if (ImGui::DragFloat3("Position", t, 0.1f))
 			{
 				trs.translation_ = { t[0],t[1],t[2] };
+				onPoseChanged();
 			}
 
-			//回転
-			XMFLOAT3 euler = QuaternionToEuler(trs.rotation_);
-			float r[3] = { euler.x,euler.y,euler.z };
+			//回転(表示中のオイラー角を保持して、±90度を越えても連続して回せるようにする)
+			XMFLOAT4 q = trs.rotation_;
+			float dot = q.x * eulerCacheQuat_.x + q.y * eulerCacheQuat_.y
+				+ q.z * eulerCacheQuat_.z + q.w * eulerCacheQuat_.w;
+			if (eulerCacheBone_ != selectedBoneIndex_ || std::abs(dot) < 0.99999f)
+			{
+				//ボーンが替わった、または時刻移動やUndoで回転が外から変わったので計算し直す
+				eulerCache_ = QuaternionToEuler(q);
+				eulerCacheQuat_ = q;
+				eulerCacheBone_ = selectedBoneIndex_;
+			}
+
+			float r[3] = { eulerCache_.x, eulerCache_.y, eulerCache_.z };
 			if (ImGui::DragFloat3("Rotation", r, 0.5f))
 			{
-				trs.rotation_ = EulerToQuaternion({ r[0],r[1],r[2] });
+				eulerCache_ = { WrapDegrees(r[0]), WrapDegrees(r[1]), WrapDegrees(r[2]) };
+				trs.rotation_ = EulerToQuaternion(eulerCache_);
+				eulerCacheQuat_ = trs.rotation_;
+				onPoseChanged();
 			}
 
 			//拡縮
@@ -109,15 +152,17 @@ bool InspectorView::Draw(const Skeleton& skeleton, Pose& inOutPose, AnimationCli
 			if (ImGui::DragFloat3("Scale", s, 0.01f, 0.01f, 10.0f))
 			{
 				trs.scale_ = { s[0],s[1],s[2] };
+				onPoseChanged();
 			}
 
-			//初期バインドポーズ
+			//元の姿勢に戻す
 			if (ImGui::Button("Reset", ImVec2(-1, 24)))
 			{
 				//クリップがあれば元の動きの姿勢、無ければバインドポーズに戻す
 				trs = currentClip
 					? currentClip->SampleBaseBone(selectedBoneIndex_, currentTime, skeleton)
 					: bone.bindPoseLocal_;
+				onPoseChanged();
 			}
 
 			ImGui::Separator();
@@ -125,12 +170,44 @@ bool InspectorView::Draw(const Skeleton& skeleton, Pose& inOutPose, AnimationCli
 			//キーフレーム登録、区間置換操作UI
 			if (currentClip != nullptr)
 			{
-				if (ImGui::Button("Key Selected Bone (K)", ImVec2(-1, 28)))
+				//文字入力中はショートカットを無効にする
+				bool canShortcut = !ImGui::GetIO().WantTextInput;
+
+				//単発キー(ボタン or Kキー)
+				if (ImGui::Button("Key Selected Bone (K)", ImVec2(-1, 28))
+					|| (canShortcut && ImGui::IsKeyPressed(ImGuiKey_K, false)))
 				{
+					undoStack.Record(clipIndex, *currentClip);
 					currentClip->SetOffsetKey(selectedBoneIndex_, currentTime, trs, skeleton);
 					keyEdited = true;
 				}
 
+				//再生位置のキーを削除(ボタン or Deleteキー)
+				if (ImGui::Button("Delete Key (Del)", ImVec2(-1, 24))
+					|| (canShortcut && ImGui::IsKeyPressed(ImGuiKey_Delete, false)))
+				{
+					if (currentClip->HasOffsetKey(selectedBoneIndex_, currentTime))
+					{
+						undoStack.Record(clipIndex, *currentClip);
+						currentClip->RemoveOffsetKey(selectedBoneIndex_, currentTime);
+						keyEdited = true;
+					}
+				}
+
+				//今の時刻の前後に修正0のキーを打ち、修正の影響範囲を限定する
+				ImGui::SetNextItemWidth(120.0f);
+				ImGui::DragFloat("##LimitRange", &limitRangeSec_, 0.01f, 0.01f, 5.0f, "+-%.2f sec");
+				ImGui::SameLine();
+				if (ImGui::Button("Limit Edit Range", ImVec2(-1, 0)))
+				{
+					float dur = currentClip->duration_;
+					float before = std::max(0.0f, currentTime - limitRangeSec_);
+					float after = (dur > 0.0f) ? std::min(dur, currentTime + limitRangeSec_) : currentTime + limitRangeSec_;
+
+					if (before < currentTime - 0.001f) currentClip->SetZeroOffsetKey(selectedBoneIndex_, before);
+					if (after > currentTime + 0.001f)  currentClip->SetZeroOffsetKey(selectedBoneIndex_, after);
+					keyEdited = true;
+				}
 				ImGui::Spacing();
 				ImGui::Text("Range Replacement(In-Out):");
 
@@ -157,7 +234,7 @@ bool InspectorView::Draw(const Skeleton& skeleton, Pose& inOutPose, AnimationCli
 				{
 					rangeEndTime_ = currentTime;
 					Transform startPose = hasRangeStartPose_ ? rangeStartTrs_ : trs;
-
+					undoStack.Record(clipIndex, *currentClip);
 					currentClip->ReplaceOffsetRange(selectedBoneIndex_, rangeStartTime_, rangeEndTime_, startPose, trs, skeleton);
 
 					hasRangeStartPose_ = false;
@@ -176,7 +253,11 @@ bool InspectorView::Draw(const Skeleton& skeleton, Pose& inOutPose, AnimationCli
 		//ボーンが何も選択されていない場合のテキスト
 		ImGui::TextDisabled("Select a bone from hierarchy to edit");
 	}
-
+	//ドラッグが終わったら、次の編集で新しくUndo履歴を積めるようにする
+	if (!ImGui::IsAnyItemActive())
+	{
+		editRecorded_ = false;
+	}
 	ImGui::End();
 
 	return keyEdited;

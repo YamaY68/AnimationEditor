@@ -33,6 +33,12 @@ public:
 	//区間の修正分を置き換える(In点・Out点の姿勢から差を計算)
 	void ReplaceOffsetRange(int boneIndex, float startTime, float endTime,
 		Transform startPose, Transform endPose, const Skeleton& skeleton);
+	//指定時刻に修正分のキーがあるか
+	bool HasOffsetKey(int boneIndex, float time)const;
+	//修正分のキーを削除
+	bool RemoveOffsetKey(int boneIndex, float time);
+	//修正0(元の動きのまま)のキーを打つ
+	void SetZeroOffsetKey(int boneIndex, float time);
 
 	//元＋修正分の合成
 	static Transform Combine(const Transform& base, const Transform& offset);

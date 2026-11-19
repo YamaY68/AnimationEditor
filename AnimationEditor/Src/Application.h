@@ -9,6 +9,7 @@
 #include "Camera/Camera.h"
 #include "Fbx/FbxModelLoader.h"
 #include "Fbx/FbxMeshModel.h"
+#include "Edit/UndoStack.h"
 
 #include "UI/ImGuiManager.h"
 #include "UI/TimeLineView.h"
@@ -29,7 +30,7 @@ public:
 private:
     void LoadDefaultModel(void);
 	void UpdateFrame(void);
-
+    void HandleUndoRedo(void);
 	void ProcessDroppedFiles(void);
 	bool LoadParentModel(const std::string& filePath);
 	void HandleMenuAction(MenuActionType action, const std::string& filePath);
@@ -67,5 +68,6 @@ private:
     float prevPlaybackTime_ = -1.0f;
     bool showBones_ = true;
     int prevKeyB_ = 0;
+    UndoStack undoStack_;
 };
 

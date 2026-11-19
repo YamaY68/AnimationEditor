@@ -49,10 +49,12 @@ public:
     //再生速度倍率を取得
     float GetPlaybackSpeed(void) const { return playbackSpeed_; }
 
+    //オートキーが有効か
+    bool IsAutoKey(void) const { return autoKey_; }
 private:
     bool isPlaying_ = true;
     bool isLoop_ = true;
     float playbackSpeed_ = 1.0f;
-
+    bool autoKey_ = true;
 };
 
