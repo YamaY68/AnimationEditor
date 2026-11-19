@@ -1,303 +1,107 @@
 #include "InspectorView.h"
 #include<imgui.h>
-#include<DirectXMath.h>
 #include<algorithm>
-#include<cmath>
-#include"../Edit/UndoStack.h"
+#include<vector>
 #include"../Common/EditorConstants.h"
-using namespace DirectX;
+#include"../Common/RotationUtil.h"
 
-//角度を -180?180度 の範囲に折り返す
-static float WrapDegrees(float deg)
+namespace
 {
-	deg = std::fmod(deg + 180.0f, 360.0f);
-	if (deg < 0.0f) deg += 360.0f;
-	return deg - 180.0f;
-}
-static XMFLOAT3 QuaternionToEuler(const XMFLOAT4& q)
-{
-	//X軸回りの回転角(Pitch)
-	float sinp = 2.0f * (q.w * q.x - q.y * q.z);
-	float pitch = std::asin(std::clamp(sinp, -1.0f, 1.0f));
+	//表示中のオイラー角を使い続けるかの判定で、この内積以上なら「回転は外から変わっていない」とみなす
+	//(オートキーで元＋修正分から計算し直したときの、ごくわずかな誤差は無視するため)
+	constexpr float kSameRotationThreshold = 0.99999f;
 
-	//Y軸回りの回転角(Yaw)
-	float yaw = std::atan2(2.0f * (q.x * q.z + q.w * q.y), 1.0f - 2.0f * (q.x * q.x + q.y * q.y));
+	constexpr ImVec2 kWindowSize(340.0f, 560.0f);	//ウィンドウの初期サイズ
+	constexpr float kHierarchyHeight = 220.0f;		//ボーン階層ツリーの高さ
+	constexpr ImVec4 kReadyColor(0.4f, 1.0f, 0.4f, 1.0f);	//In点が記録済みのときの文字色
 
-	//Z軸回りの回転角(Roll)
-	float roll = std::atan2(2.0f * (q.x * q.y + q.w * q.z), 1.0f - 2.0f * (q.x * q.x + q.z * q.z));
-
-	//ラジアンから度数法へ変換
-	return { XMConvertToDegrees(pitch), XMConvertToDegrees(yaw), XMConvertToDegrees(roll) };
+	//補間方法の選択肢(InterpolationTypeと同じ順番に並べる)
+	const char* const kInterpNames[] = { "Linear", "Step", "EaseIn", "EaseOut", "EaseInOut" };
 }
 
-static XMFLOAT4 EulerToQuaternion(const XMFLOAT3& euler)
+InspectorResult InspectorView::Draw(const Skeleton& skeleton, Pose& inOutPose, EditorState& state)
 {
-	//度数法からDirectXMathが要求するラジアンへ変換
-	float p = XMConvertToRadians(euler.x);
-	float y = XMConvertToRadians(euler.y);
-	float r = XMConvertToRadians(euler.z);
+	InspectorResult result;
 
-	//Pitch->Yaw->Rollの淳で回転クォータニオンを構築
-	XMVECTOR q = XMQuaternionRotationRollPitchYaw(p, y, r);
-
-	//SIMDレジスタからメモリ構造体へ書き出して返却
-	XMFLOAT4 out;
-	XMStoreFloat4(&out, q);
-	return out;
-}
-
-bool InspectorView::Draw(const Skeleton& skeleton, Pose& inOutPose, AnimationClip* currentClip, float currentTime,
-	UndoStack& undoStack, int clipIndex, bool autoKey, bool& outPoseEdited)
-{
-	//このフレームでキーフレームの追加、更新が行われたか記録するフラグ
-	bool keyEdited = false;
-	outPoseEdited = false;
-
-	ImGui::SetNextWindowSize(ImVec2(340, 560), ImGuiCond_FirstUseEver);
+	ImGui::SetNextWindowSize(kWindowSize, ImGuiCond_FirstUseEver);
 	ImGui::Begin("Inspector");
 
-	//スケルトンがまだ読み込まれていない場合のガード表示
 	if (skeleton.GetBoneCount() == 0)
 	{
 		ImGui::Text("No Skeleton Loaded");
 		ImGui::End();
-		return false;
+		return result;
 	}
 
-	//親モデルの差し替え等でボーン数が減り、選択インデックスが範囲外になった場合は未設定に戻す
-	if (selectedBoneIndex_ >= static_cast<int>(skeleton.GetBoneCount()))
+	//モデルの差し替えでボーン数が減り、選択中のボーンが範囲外になったら選択を外す
+	if (state.selectedBoneIndex >= static_cast<int>(skeleton.GetBoneCount()))
 	{
-		selectedBoneIndex_ = -1;
-		hasRangeStartPose_ = false;
+		state.selectedBoneIndex = -1;
 	}
 
-	//ボーン階層ツリー表示
-	ImGui::BeginChild("BoneHierarchy", ImVec2(0, 220), true);
-	//読み込まれているボーンの総数を表示
-	ImGui::Text("Skeleton Hierarchy(%zu bones)", skeleton.GetBoneCount());
-	ImGui::Separator();
+	DrawBoneHierarchy(skeleton, state);
 
-	//全ボーンを走査し、親を持たないルートボーンから再帰的にツリーを展開
-	for (size_t i = 0; i < skeleton.GetBoneCount(); ++i)
+	const int boneIndex = state.selectedBoneIndex;
+	if (boneIndex < 0 || boneIndex >= static_cast<int>(inOutPose.GetBoneCount()))
 	{
-		if (skeleton.GetBone(i).parentIndex_ == -1)
-		{
-			DrawBoneNode(static_cast<int>(i), skeleton);
-		}
-	}
-	ImGui::EndChild();
-	ImGui::Separator();
-
-	//選択中ボーンのトランスフォーム編集エリア
-	if (selectedBoneIndex_ >= 0 && selectedBoneIndex_ < static_cast<int>(skeleton.GetBoneCount()))
-	{
-		//選択中のボーン情報
-		const auto& bone = skeleton.GetBone(selectedBoneIndex_);
-		ImGui::Text("Selected:%s(ID:%d)", bone.name_.c_str(), selectedBoneIndex_);
-
-		//現在姿勢の配列範囲内であることを確認
-		if (selectedBoneIndex_ < static_cast<int>(inOutPose.GetBoneCoount()))
-		{
-			//選択ボーンのローカルTransformへ参照を取得
-			Transform& trs = inOutPose[selectedBoneIndex_];
-
-			//姿勢が変更されたときの共通処理(オートキー)
-			auto onPoseChanged = [&]()
-				{
-					outPoseEdited = true;
-					if (autoKey && currentClip != nullptr)
-					{
-						//ドラッグ1回につきUndo履歴は1つだけ積む
-						if (!editRecorded_)
-						{
-							undoStack.Record(clipIndex, *currentClip);
-							editRecorded_ = true;
-						}
-						currentClip->SetOffsetKey(selectedBoneIndex_, currentTime, trs, skeleton);
-						keyEdited = true;
-					}
-				};
-
-			//平行移動
-			float t[3] = { trs.translation_.x,trs.translation_.y,trs.translation_.z };
-			if (ImGui::DragFloat3("Position", t, 0.1f))
-			{
-				trs.translation_ = { t[0],t[1],t[2] };
-				onPoseChanged();
-			}
-
-			//回転(表示中のオイラー角を保持して、±90度を越えても連続して回せるようにする)
-			XMFLOAT4 q = trs.rotation_;
-			float dot = q.x * eulerCacheQuat_.x + q.y * eulerCacheQuat_.y
-				+ q.z * eulerCacheQuat_.z + q.w * eulerCacheQuat_.w;
-			if (eulerCacheBone_ != selectedBoneIndex_ || std::abs(dot) < 0.99999f)
-			{
-				//ボーンが替わった、または時刻移動やUndoで回転が外から変わったので計算し直す
-				eulerCache_ = QuaternionToEuler(q);
-				eulerCacheQuat_ = q;
-				eulerCacheBone_ = selectedBoneIndex_;
-			}
-
-			float r[3] = { eulerCache_.x, eulerCache_.y, eulerCache_.z };
-			if (ImGui::DragFloat3("Rotation", r, 0.5f))
-			{
-				eulerCache_ = { WrapDegrees(r[0]), WrapDegrees(r[1]), WrapDegrees(r[2]) };
-				trs.rotation_ = EulerToQuaternion(eulerCache_);
-				eulerCacheQuat_ = trs.rotation_;
-				onPoseChanged();
-			}
-
-			//拡縮
-			float s[3] = { trs.scale_.x,trs.scale_.y,trs.scale_.z };
-			if (ImGui::DragFloat3("Scale", s, 0.01f, 0.01f, 10.0f))
-			{
-				trs.scale_ = { s[0],s[1],s[2] };
-				onPoseChanged();
-			}
-
-			//元の姿勢に戻す
-			if (ImGui::Button("Reset", ImVec2(-1, 24)))
-			{
-				//クリップがあれば元の動きの姿勢、無ければバインドポーズに戻す
-				trs = currentClip
-					? currentClip->SampleBaseBone(selectedBoneIndex_, currentTime, skeleton)
-					: bone.bindPoseLocal_;
-				onPoseChanged();
-			}
-
-			ImGui::Separator();
-
-			//キーフレーム登録、区間置換操作UI
-			if (currentClip != nullptr)
-			{
-				//文字入力中はショートカットを無効にする
-				bool canShortcut = !ImGui::GetIO().WantTextInput;
-
-				//単発キー(ボタン or Kキー)
-				if (ImGui::Button("Key Selected Bone (K)", ImVec2(-1, 28))
-					|| (canShortcut && ImGui::IsKeyPressed(ImGuiKey_K, false)))
-				{
-					undoStack.Record(clipIndex, *currentClip);
-					currentClip->SetOffsetKey(selectedBoneIndex_, currentTime, trs, skeleton);
-					keyEdited = true;
-				}
-
-				//再生位置のキーを削除(ボタン or Deleteキー)
-				if (ImGui::Button("Delete Key (Del)", ImVec2(-1, 24))
-					|| (canShortcut && ImGui::IsKeyPressed(ImGuiKey_Delete, false)))
-				{
-					if (currentClip->HasOffsetKey(selectedBoneIndex_, currentTime))
-					{
-						undoStack.Record(clipIndex, *currentClip);
-						currentClip->RemoveOffsetKey(selectedBoneIndex_, currentTime);
-						keyEdited = true;
-					}
-				}
-
-				//再生位置のキーの補間方法(このキーから次のキーまでの動き方)
-				InterpolationType interp;
-				if (currentClip->GetOffsetInterpolation(selectedBoneIndex_, currentTime, interp))
-				{
-					static const char* kInterpNames[] = { "Linear", "Step", "EaseIn", "EaseOut", "EaseInOut" };
-					int current = static_cast<int>(interp);
-					if (current < 0 || current >= IM_ARRAYSIZE(kInterpNames)) current = 0;
-
-					ImGui::Text("Interpolation (to next key):");
-					ImGui::SetNextItemWidth(-1.0f);
-					if (ImGui::Combo("##Interp", &current, kInterpNames, IM_ARRAYSIZE(kInterpNames)))
-					{
-						undoStack.Record(clipIndex, *currentClip);
-						currentClip->SetOffsetInterpolation(selectedBoneIndex_, currentTime,
-							static_cast<InterpolationType>(current));
-						keyEdited = true;
-					}
-				}
-				else
-				{
-					ImGui::TextDisabled("Interpolation: no key at current time");
-				}
-
-				//今の時刻の前後に修正0のキーを打ち、修正の影響範囲を限定する
-				ImGui::SetNextItemWidth(120.0f);
-				ImGui::DragFloat("##LimitRange", &limitRangeSec_, 0.01f, 0.01f, 5.0f, "+-%.2f sec");
-				ImGui::SameLine();
-				if (ImGui::Button("Limit Edit Range", ImVec2(-1, 0)))
-				{
-					undoStack.Record(clipIndex, *currentClip);
-
-					//前後の時刻(クリップの範囲内に収める)
-					const float dur = currentClip->duration_;
-					const float before = std::max(0.0f, currentTime - limitRangeSec_);
-					const float after = (dur > 0.0f) ? std::min(dur, currentTime + limitRangeSec_) : currentTime + limitRangeSec_;
-
-					//前後の0キーが今の時刻と重なる場合(クリップの端にいるとき)は打たない
-					const float eps = EditorConst::kKeyTimeEpsilon;
-					if (before < currentTime - eps) currentClip->SetZeroOffsetKey(selectedBoneIndex_, before);
-					if (after > currentTime + eps)  currentClip->SetZeroOffsetKey(selectedBoneIndex_, after);
-					keyEdited = true;
-				}
-				ImGui::Spacing();
-				ImGui::Text("Range Replacement(In-Out):");
-
-				//現在時刻を開始地点としえｔ記録し、この瞬間の姿勢を保存
-				if (ImGui::Button("Set In Point", ImVec2(-1, 24)))
-				{
-					rangeStartTime_ = currentTime;
-					rangeStartTrs_ = trs;
-					hasRangeStartPose_ = true;
-				}
-
-				//In点がセット済みの場合、記録された開始時刻を表示
-				if (hasRangeStartPose_)
-				{
-					ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "In time:%.3f sec(Ready)", rangeStartTime_);
-				}
-				else
-				{
-					ImGui::TextDisabled("In Time:Not Set");
-				}
-
-				//今の時刻をOut点にして、In点～Out点の修正分を置き換える
-				if (ImGui::Button("Set Out&Replace Range", ImVec2(-1, 28)))
-				{
-					//In点が未設定なら、今の姿勢を始点にする
-					Transform startPose = hasRangeStartPose_ ? rangeStartTrs_ : trs;
-					undoStack.Record(clipIndex, *currentClip);
-					currentClip->ReplaceOffsetRange(selectedBoneIndex_, rangeStartTime_, currentTime, startPose, trs, skeleton);
-
-					hasRangeStartPose_ = false;
-					keyEdited = true;
-				}
-			}
-			else
-			{
-				//アニメーションクリップが１つも読み込まれていない場合
-				ImGui::TextDisabled("Load an Animation clip to edit keys");
-			}
-		}
+		ImGui::TextDisabled("Select a bone from hierarchy to edit");
 	}
 	else
 	{
-		//ボーンが何も選択されていない場合のテキスト
-		ImGui::TextDisabled("Select a bone from hierarchy to edit");
+		ImGui::Text("Selected:%s(ID:%d)", skeleton.GetBone(boneIndex).name_.c_str(), boneIndex);
+
+		Transform& trs = inOutPose[boneIndex];
+		DrawTransformEditor(trs, boneIndex, skeleton, state, result);
+		ImGui::Separator();
+
+		if (AnimationClip* clip = state.GetActiveClip())
+		{
+			DrawKeyControls(trs, boneIndex, skeleton, *clip, state, result);
+			ImGui::Spacing();
+			DrawRangeReplace(trs, boneIndex, skeleton, *clip, state, result);
+		}
+		else
+		{
+			ImGui::TextDisabled("Load an Animation clip to edit keys");
+		}
 	}
-	//ドラッグが終わったら、次の編集で新しくUndo履歴を積めるようにする
+
+	//ドラッグが終わったら、次の編集で新しくUndoの履歴を積めるようにする
 	if (!ImGui::IsAnyItemActive())
 	{
 		editRecorded_ = false;
 	}
-	ImGui::End();
 
-	return keyEdited;
+	ImGui::End();
+	return result;
 }
 
-void InspectorView::DrawBoneNode(int boneIndex, const Skeleton& skeleton)
-{
-	//対象ボーンのデータ参照を取得
-	const auto& bone = skeleton.GetBone(boneIndex);
+//=============================================================
+// ボーンの階層ツリー
+//=============================================================
 
-	//このボーンの親として持つ子ボーンのインデっクス一覧を収集
-	std::vector<int>children;
+void InspectorView::DrawBoneHierarchy(const Skeleton& skeleton, EditorState& state)
+{
+	ImGui::BeginChild("BoneHierarchy", ImVec2(0, kHierarchyHeight), true);
+	ImGui::Text("Skeleton Hierarchy(%zu bones)", skeleton.GetBoneCount());
+	ImGui::Separator();
+
+	//親がいないボーン(ルート)から、子をたどってツリーを表示する
+	for (size_t i = 0; i < skeleton.GetBoneCount(); ++i)
+	{
+		if (skeleton.GetBone(i).parentIndex_ == -1)
+		{
+			DrawBoneNode(static_cast<int>(i), skeleton, state);
+		}
+	}
+	ImGui::EndChild();
+	ImGui::Separator();
+}
+
+void InspectorView::DrawBoneNode(int boneIndex, const Skeleton& skeleton, EditorState& state)
+{
+	//このボーンの子を集める
+	std::vector<int> children;
 	for (size_t i = 0; i < skeleton.GetBoneCount(); ++i)
 	{
 		if (skeleton.GetBone(i).parentIndex_ == boneIndex)
@@ -306,42 +110,224 @@ void InspectorView::DrawBoneNode(int boneIndex, const Skeleton& skeleton)
 		}
 	}
 
-	//ツリーノードの表示オプションフラグを設定
 	ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick;
-
-	//現在選択中のボーンであれば青色ハイライト
-	if (selectedBoneIndex_ == boneIndex)
+	if (state.selectedBoneIndex == boneIndex)
 	{
-		flags |= ImGuiTreeNodeFlags_Selected;
+		flags |= ImGuiTreeNodeFlags_Selected;	//選択中は青くハイライト
 	}
-	//子ボーンを持たない末端ボーンは矢印をださないリーフノードにする
 	if (children.empty())
 	{
+		//子がいないボーンは矢印を出さない
 		flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
 	}
 
-	//ImGui　ツリーノードを描画
-	bool nodeOpen = ImGui::TreeNodeEx(
+	//ボーン番号をImGuiのIDにする(同じ名前のボーンがあってもIDが重ならないように)
+	const bool nodeOpen = ImGui::TreeNodeEx(
 		reinterpret_cast<void*>(static_cast<intptr_t>(boneIndex)),
-		flags, "%s", bone.name_.c_str());
+		flags, "%s", skeleton.GetBone(boneIndex).name_.c_str());
 
-	//このボーン項目がマウスクリックされたら選択状態を更新し、In点記録フラグをリセット
 	if (ImGui::IsItemClicked())
 	{
-		if (selectedBoneIndex_ != boneIndex)
+		state.selectedBoneIndex = boneIndex;
+	}
+
+	//開いていれば子を表示する
+	if (!children.empty() && nodeOpen)
+	{
+		for (int child : children)
 		{
-			selectedBoneIndex_ = boneIndex;
-			hasRangeStartPose_ = false;
+			DrawBoneNode(child, skeleton, state);
+		}
+		ImGui::TreePop();
+	}
+}
+
+//=============================================================
+// 姿勢の編集
+//=============================================================
+
+void InspectorView::OnPoseChanged(const Transform& trs, int boneIndex, const Skeleton& skeleton,
+	EditorState& state, InspectorResult& result)
+{
+	result.poseEdited = true;
+
+	AnimationClip* clip = state.GetActiveClip();
+	if (!state.autoKey || clip == nullptr) return;
+
+	//ドラッグ1回につき、Undoの履歴は1つだけ積む
+	if (!editRecorded_)
+	{
+		state.RecordUndo();
+		editRecorded_ = true;
+	}
+	clip->SetOffsetKey(boneIndex, state.playback.time, trs, skeleton);
+	result.keyEdited = true;
+}
+
+void InspectorView::DrawTransformEditor(Transform& trs, int boneIndex, const Skeleton& skeleton,
+	EditorState& state, InspectorResult& result)
+{
+	//位置
+	float t[3] = { trs.translation_.x, trs.translation_.y, trs.translation_.z };
+	if (ImGui::DragFloat3("Position", t, 0.1f))
+	{
+		trs.translation_ = { t[0], t[1], t[2] };
+		OnPoseChanged(trs, boneIndex, skeleton, state, result);
+	}
+
+	//回転
+	//毎フレームクォータニオンから計算し直すと、Xが±90度で跳ね返ってしまうので、
+	//表示中のオイラー角を覚えておき、回転が外から変わったときだけ計算し直す
+	if (eulerCacheBone_ != boneIndex
+		|| !RotationUtil::IsSameRotation(trs.rotation_, eulerCacheQuat_, kSameRotationThreshold))
+	{
+		eulerCache_ = RotationUtil::QuaternionToEulerDeg(trs.rotation_);
+		eulerCacheQuat_ = trs.rotation_;
+		eulerCacheBone_ = boneIndex;
+	}
+
+	float r[3] = { eulerCache_.x, eulerCache_.y, eulerCache_.z };
+	if (ImGui::DragFloat3("Rotation", r, 0.5f))
+	{
+		//表示は -180～180度 に折り返す(360度回しても向きは同じ)
+		eulerCache_ = {
+			RotationUtil::WrapDegrees(r[0]),
+			RotationUtil::WrapDegrees(r[1]),
+			RotationUtil::WrapDegrees(r[2]) };
+		trs.rotation_ = RotationUtil::EulerDegToQuaternion(eulerCache_);
+		eulerCacheQuat_ = trs.rotation_;
+		OnPoseChanged(trs, boneIndex, skeleton, state, result);
+	}
+
+	//スケール
+	float s[3] = { trs.scale_.x, trs.scale_.y, trs.scale_.z };
+	if (ImGui::DragFloat3("Scale", s, 0.01f, 0.01f, 10.0f))
+	{
+		trs.scale_ = { s[0], s[1], s[2] };
+		OnPoseChanged(trs, boneIndex, skeleton, state, result);
+	}
+
+	//元の姿勢に戻す(クリップがあれば元の動きの姿勢、無ければバインドポーズ)
+	if (ImGui::Button("Reset", ImVec2(-1, 24)))
+	{
+		const AnimationClip* clip = state.GetActiveClip();
+		trs = clip
+			? clip->SampleBaseBone(boneIndex, state.playback.time, skeleton)
+			: skeleton.GetBone(boneIndex).bindPoseLocal_;
+		OnPoseChanged(trs, boneIndex, skeleton, state, result);
+	}
+}
+
+//=============================================================
+// キーの操作
+//=============================================================
+
+void InspectorView::DrawKeyControls(const Transform& trs, int boneIndex, const Skeleton& skeleton,
+	AnimationClip& clip, EditorState& state, InspectorResult& result)
+{
+	const float time = state.playback.time;
+	//文字入力中はショートカットを無効にする
+	const bool canShortcut = !ImGui::GetIO().WantTextInput;
+
+	//キーを打つ(ボタン or Kキー)
+	if (ImGui::Button("Key Selected Bone (K)", ImVec2(-1, 28))
+		|| (canShortcut && ImGui::IsKeyPressed(ImGuiKey_K, false)))
+	{
+		state.RecordUndo();
+		clip.SetOffsetKey(boneIndex, time, trs, skeleton);
+		result.keyEdited = true;
+	}
+
+	//再生位置のキーを消す(ボタン or Deleteキー)
+	if (ImGui::Button("Delete Key (Del)", ImVec2(-1, 24))
+		|| (canShortcut && ImGui::IsKeyPressed(ImGuiKey_Delete, false)))
+	{
+		//キーが無いときに履歴を積まないよう、先に確認する
+		if (clip.HasOffsetKey(boneIndex, time))
+		{
+			state.RecordUndo();
+			clip.RemoveOffsetKey(boneIndex, time);
+			result.keyEdited = true;
 		}
 	}
 
-	//子ボーンが存在し、かつツリーノードが開かれている場合は再帰的に子を描画
-	if (!children.empty() && nodeOpen)
+	//再生位置のキーの補間方法(このキーから次のキーまでの動き方)
+	InterpolationType interp;
+	if (clip.GetOffsetInterpolation(boneIndex, time, interp))
 	{
-		for (int childIdx : children)
+		int current = static_cast<int>(interp);
+		if (current < 0 || current >= IM_ARRAYSIZE(kInterpNames)) current = 0;
+
+		ImGui::Text("Interpolation (to next key):");
+		ImGui::SetNextItemWidth(-1.0f);
+		if (ImGui::Combo("##Interp", &current, kInterpNames, IM_ARRAYSIZE(kInterpNames)))
 		{
-			DrawBoneNode(childIdx, skeleton);
+			state.RecordUndo();
+			clip.SetOffsetInterpolation(boneIndex, time, static_cast<InterpolationType>(current));
+			result.keyEdited = true;
 		}
-		ImGui::TreePop();
+	}
+	else
+	{
+		ImGui::TextDisabled("Interpolation: no key at current time");
+	}
+
+	//今の時刻の前後に修正0のキーを打ち、修正の影響範囲を限定する
+	ImGui::SetNextItemWidth(120.0f);
+	ImGui::DragFloat("##LimitRange", &limitRangeSec_, 0.01f, 0.01f, 5.0f, "+-%.2f sec");
+	ImGui::SameLine();
+	if (ImGui::Button("Limit Edit Range", ImVec2(-1, 0)))
+	{
+		state.RecordUndo();
+
+		//前後の時刻(クリップの範囲内に収める)
+		const float duration = clip.duration_;
+		const float before = std::max(0.0f, time - limitRangeSec_);
+		const float after = (duration > 0.0f) ? std::min(duration, time + limitRangeSec_) : time + limitRangeSec_;
+
+		//前後の0キーが今の時刻と重なる場合(クリップの端にいるとき)は打たない
+		const float eps = EditorConst::kKeyTimeEpsilon;
+		if (before < time - eps) clip.SetZeroOffsetKey(boneIndex, before);
+		if (after > time + eps)  clip.SetZeroOffsetKey(boneIndex, after);
+		result.keyEdited = true;
+	}
+}
+
+void InspectorView::DrawRangeReplace(const Transform& trs, int boneIndex, const Skeleton& skeleton,
+	AnimationClip& clip, EditorState& state, InspectorResult& result)
+{
+	const float time = state.playback.time;
+	ImGui::Text("Range Replacement(In-Out):");
+
+	//今の時刻と姿勢をIn点として記録する
+	if (ImGui::Button("Set In Point", ImVec2(-1, 24)))
+	{
+		rangeStartTime_ = time;
+		rangeStartTrs_ = trs;
+		rangeStartBone_ = boneIndex;
+	}
+
+	//In点は、記録したボーンを選んでいるときだけ有効
+	const bool hasInPoint = (rangeStartBone_ == boneIndex);
+	if (hasInPoint)
+	{
+		ImGui::TextColored(kReadyColor, "In time:%.3f sec(Ready)", rangeStartTime_);
+	}
+	else
+	{
+		ImGui::TextDisabled("In Time:Not Set");
+	}
+
+	//今の時刻をOut点にして、In点～Out点の修正分を置き換える
+	if (ImGui::Button("Set Out&Replace Range", ImVec2(-1, 28)))
+	{
+		//In点が未設定なら、今の姿勢を始点の姿勢にする
+		const Transform startPose = hasInPoint ? rangeStartTrs_ : trs;
+
+		state.RecordUndo();
+		clip.ReplaceOffsetRange(boneIndex, rangeStartTime_, time, startPose, trs, skeleton);
+
+		rangeStartBone_ = -1;	//次の区間に備えてIn点を消す
+		result.keyEdited = true;
 	}
 }

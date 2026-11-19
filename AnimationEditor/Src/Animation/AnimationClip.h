@@ -1,11 +1,18 @@
 #pragma once
 #include<string>
 #include<vector>
-#include<cmath>
 #include"AnimationTrack.h"
 #include"Skeleton.h"
 #include"Pose.h"
 
+/// <summary>
+/// アニメーション1本分
+///
+/// 「元の動き」と「修正分」の2層に分けて持つ(アニメーションレイヤー方式)
+///   boneTracks_   : FBXから読み込んだ元の動き。編集では書き換えない
+///   offsetTracks_ : ユーザーが打ったキー。元の動きとの差分を持つ
+/// 表示する姿勢は「元の動き + 修正分」で求める
+/// </summary>
 class AnimationClip
 {
 public:
@@ -14,47 +21,61 @@ public:
 		:name_(name), duration_(duration) {
 	}
 
-	//元のトラックを取得(インポート時のみ使用。編集では書き換えない)
-	BoneTrack* GetOrCreateTrack(int boneIndex);
+	//---------- トラックの取得 ----------
 
-	//修正分のトラックを取得
+	//元の動きのトラックを取得(無ければ作る)。FBX読み込み時だけ使う
+	BoneTrack* GetOrCreateTrack(int boneIndex);
+	//修正分のトラックを取得(無ければ作る)
 	BoneTrack* GetOrCreateOffsetTrack(int boneIndex);
+	//修正分のトラックを探す(無ければnullptr)
 	const BoneTrack* FindOffsetTrack(int boneIndex)const;
 
-	//元＋修正分の姿勢をサンプリング(表示用)
+	//---------- 姿勢の計算 ----------
+
+	//元の動き＋修正分の姿勢を求める(画面に表示する姿勢)
 	void Sample(float time, const Skeleton& skeleton, Pose& outPose)const;
-	//元の姿勢だけをサンプリング
+	//元の動きだけの姿勢を求める
 	void SampleBase(float time, const Skeleton& skeleton, Pose& outPose)const;
-	//指定ボーンの元の姿勢だけを取得
+	//指定ボーンの、元の動きだけの姿勢を求める
 	Transform SampleBaseBone(int boneIndex, float time, const Skeleton& skeleton)const;
 
-	//目標の姿勢と元の姿勢の差を、修正分のキーとして打つ
+	//---------- 修正分のキーの編集 ----------
+
+	//targetPoseになるように、元の動きとの差を修正分のキーとして打つ
 	void SetOffsetKey(int boneIndex, float time, const Transform& targetPose, const Skeleton& skeleton);
-	//区間の修正分を置き換える(In点・Out点の姿勢から差を計算)
+	//区間内の修正分のキーを消し、始点と終点の姿勢でキーを打ち直す(始点と終点が逆なら入れ替える)
 	void ReplaceOffsetRange(int boneIndex, float startTime, float endTime,
 		Transform startPose, Transform endPose, const Skeleton& skeleton);
 	//指定時刻に修正分のキーがあるか
 	bool HasOffsetKey(int boneIndex, float time)const;
-	//修正分のキーを削除
+	//修正分のキーを削除する(削除したらtrue)
 	bool RemoveOffsetKey(int boneIndex, float time);
 	//修正0(元の動きのまま)のキーを打つ
 	void SetZeroOffsetKey(int boneIndex, float time);
-
-	//元＋修正分の合成
-	static Transform Combine(const Transform& base, const Transform& offset);
-	//目標－元の差分
-	static Transform Difference(const Transform& base, const Transform& target);
-
-	//修正分のキーの補間方法を取得 / 設定
+	//修正分のキーの補間方法を取得する(キーが無ければfalse)
 	bool GetOffsetInterpolation(int boneIndex, float time, InterpolationType& out)const;
+	//修正分のキーの補間方法を設定する
 	void SetOffsetInterpolation(int boneIndex, float time, InterpolationType type);
 
-	std::string name_;
-	float duration_ = 0.0f;
-	std::vector<BoneTrack> boneTracks_;    //元のトラック
-	std::vector<BoneTrack> offsetTracks_;  //修正分のトラック
+	//---------- 元の動きと修正分の計算 ----------
+
+	//元の動き＋修正分
+	static Transform Combine(const Transform& base, const Transform& offset);
+	//目標の姿勢－元の動き(＝修正分)。Combine(base, Difference(base, target)) == target になる
+	static Transform Difference(const Transform& base, const Transform& target);
+
+	std::string name_;						//クリップ名
+	float duration_ = 0.0f;					//長さ(秒)
+	std::vector<BoneTrack> boneTracks_;		//元の動き
+	std::vector<BoneTrack> offsetTracks_;	//修正分
 
 private:
+	//時刻を0～duration_の範囲に折り返す(終端ちょうどは折り返さない)
 	float WrapTime(float time)const;
+
+	//トラック配列から指定ボーンのトラックを探す
 	static const BoneTrack* FindTrack(const std::vector<BoneTrack>& tracks, int boneIndex);
+	static BoneTrack* FindTrack(std::vector<BoneTrack>& tracks, int boneIndex);
+	//トラック配列から指定ボーンのトラックを探し、無ければ末尾に作る
+	static BoneTrack* GetOrCreate(std::vector<BoneTrack>& tracks, int boneIndex);
 };

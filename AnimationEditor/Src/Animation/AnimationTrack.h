@@ -3,31 +3,39 @@
 #include<algorithm>
 #include<cmath>
 #include"KeyFrame.h"
-#include"../Common/Transform.h"
 #include"Easing.h"
+#include"../Common/Transform.h"
 #include"../Common/EditorConstants.h"
 
+/// <summary>
+/// 1つの値(移動・回転・スケールのどれか)のキーフレーム列
+/// キーは常に時刻順に並べておく(Sampleで二分探索するため)
+/// </summary>
+/// <typeparam name="T">値の型(XMFLOAT3 または XMFLOAT4)</typeparam>
 template <typename T>
 class AnimationTrack
 {
 public:
-	//キーフレームの動的配列
-	std::vector<KeyFrame<T >> keys_;
+	//時刻順に並んだキー
+	std::vector<KeyFrame<T>> keys_;
 
 	/// <summary>
-	/// キーフレームを追加
+	/// キーを追加する(時刻順を保つ)
+	/// 同じ時刻のキーがあるかは確認しないので、上書きしたいときはSetKeyを使う
 	/// </summary>
-	/// <param name="time">フレーム時刻</param>
-	/// <param name="value">値</param>
-	/// <param name="interp">補間タイプ</param>
-	/// <param name="isUser">手動編集フラグ</param>
 	void AddKey(float time, const T& value, InterpolationType interp = InterpolationType::Linear)
 	{
+		//末尾のキーより後ろなら、末尾に足すだけで順番が保たれる
+		//(FBX読み込み時は時刻順に追加されるので、毎回のソートを省ける)
+		const bool keepsOrder = keys_.empty() || keys_.back().time_ <= time;
 		keys_.emplace_back(time, value, interp);
-		std::sort(keys_.begin(), keys_.end(), [](const KeyFrame<T>& a, const KeyFrame<T>& b)
-			{
-				return a.time_ < b.time_;
-			});
+		if (!keepsOrder)
+		{
+			std::sort(keys_.begin(), keys_.end(), [](const KeyFrame<T>& a, const KeyFrame<T>& b)
+				{
+					return a.time_ < b.time_;
+				});
+		}
 	}
 
 	/// <summary>
@@ -52,18 +60,21 @@ public:
 	/// 指定時刻のキーの値を上書きする。無ければ新しく追加する
 	/// 既存のキーの補間方法は変えない(オートキーで上書きしたときに補間方法が戻らないように)
 	/// </summary>
-	/// <param name="interp">新しく追加するときの補間方法</param>
-	void SetKey(float time, const T& value, InterpolationType interp = InterpolationType::Linear)
+	/// <param name="interpForNewKey">新しく追加するときの補間方法</param>
+	void SetKey(float time, const T& value, InterpolationType interpForNewKey = InterpolationType::Linear)
 	{
 		if (KeyFrame<T>* key = FindKey(time))
 		{
 			key->value_ = value;
 			return;
 		}
-		AddKey(time, value, interp);
+		AddKey(time, value, interpForNewKey);
 	}
 
-	//指定時刻のキーを削除する(削除したらtrue)
+	/// <summary>
+	/// 指定時刻のキーを削除する
+	/// </summary>
+	/// <returns>削除したらtrue</returns>
 	bool RemoveKey(float time)
 	{
 		const size_t oldSize = keys_.size();
@@ -73,7 +84,11 @@ public:
 			}), keys_.end());
 		return keys_.size() != oldSize;
 	}
-	//指定時刻のキーの補間方法を取得する(キーが無ければfalse)
+
+	/// <summary>
+	/// 指定時刻のキーの補間方法を取得する
+	/// </summary>
+	/// <returns>キーが無ければfalse</returns>
 	bool GetInterpolation(float time, InterpolationType& out)const
 	{
 		if (const KeyFrame<T>* key = FindKey(time))
@@ -84,7 +99,9 @@ public:
 		return false;
 	}
 
-	//指定時刻のキーの補間方法を設定する(キーが無ければ何もしない)
+	/// <summary>
+	/// 指定時刻のキーの補間方法を設定する(キーが無ければ何もしない)
+	/// </summary>
 	void SetInterpolation(float time, InterpolationType type)
 	{
 		if (KeyFrame<T>* key = FindKey(time))
@@ -94,19 +111,14 @@ public:
 	}
 
 	/// <summary>
-	/// 指定区間の補間キーを設定する
+	/// 区間内のキーをすべて消し、始点と終点にキーを打ち直す
 	/// </summary>
-	/// <param name="rangeStart">開始時刻</param>
-	/// <param name="rangeEnd">終了時刻</param>
-	/// <param name="startVal">始点値</param>
-	/// <param name="endVal">終点値</param>
-	/// <param name="interp">補間タイプ</param>
-	void SetRangeKeys(float rangeStart, float rangeEnd,
-		const T& startVal, const T& endVal,
+	/// <param name="rangeStart">始点の時刻(rangeEnd以下であること)</param>
+	/// <param name="rangeEnd">終点の時刻</param>
+	void SetRangeKeys(float rangeStart, float rangeEnd, const T& startVal, const T& endVal,
 		InterpolationType interp = InterpolationType::Linear)
 	{
-		const float eps = EditorConst::kKeyTimeEpsilon;		
-		//指定区間の内側にあるキーフレームを全削除
+		const float eps = EditorConst::kKeyTimeEpsilon;
 		keys_.erase(std::remove_if(keys_.begin(), keys_.end(), [=](const KeyFrame<T>& k)
 			{
 				return (k.time_ >= rangeStart - eps && k.time_ <= rangeEnd + eps);
@@ -116,64 +128,59 @@ public:
 	}
 
 	/// <summary>
-	/// 指定時刻の値をサンプリング
+	/// 指定時刻の値を求める
+	/// 最初のキーより前は最初のキーの値、最後のキーより後は最後のキーの値になる
 	/// </summary>
-	/// <param name="time">サンプリング時刻</param>
-	/// <param name="defaultValue">キーがない場合の規定値</param>
-	/// <returns>補間された値</returns>
+	/// <param name="defaultValue">キーが1つも無いときに返す値</param>
 	T Sample(float time, const T& defaultValue)const
 	{
-		if (keys_.empty())return defaultValue;
-		if (keys_.size() == 1 || time <= keys_.front().time_)return keys_.front().value_;
-		if (time >= keys_.back().time_)return keys_.back().value_;
+		if (keys_.empty()) return defaultValue;
+		if (keys_.size() == 1 || time <= keys_.front().time_) return keys_.front().value_;
+		if (time >= keys_.back().time_) return keys_.back().value_;
 
-		//二分探索でtimeより未来にある最初のキーフレームを探索
-		auto it = std::upper_bound(keys_.begin(), keys_.end(), time,
+		//timeより後ろにある最初のキーを二分探索で探す(＝次のキー)
+		auto nextIt = std::upper_bound(keys_.begin(), keys_.end(), time,
 			[](float t, const KeyFrame<T>& key)
 			{
 				return t < key.time_;
 			});
+		const KeyFrame<T>& nextKey = *nextIt;
+		const KeyFrame<T>& prevKey = *(nextIt - 1);
 
-		size_t nextIdx = std::distance(keys_.begin(), it);
-		size_t prevIdx = nextIdx - 1;
+		//前のキーから次のキーまでの進み具合(0～1)
+		float span = nextKey.time_ - prevKey.time_;
+		float factor = (span > 0.0f) ? ((time - prevKey.time_) / span) : 0.0f;
 
-		const auto& prevkey = keys_[prevIdx];
-		const auto& nextKey = keys_[nextIdx];
-
-		float duration = nextKey.time_ - prevkey.time_;
-		float factor = (duration > 0.0f) ? ((time - prevkey.time_) / duration) : 0.0f;
-
-		return KeyFrameMath::Interpolate(prevkey.value_, nextKey.value_, factor, prevkey.interpolation_);
+		//補間方法は「前のキー」に設定されたものを使う
+		return KeyFrameMath::Interpolate(prevKey.value_, nextKey.value_, factor, prevKey.interpolation_);
 	}
 };
 
+/// <summary>
+/// ボーン1本分のトラック(移動・回転・スケールの3本をまとめたもの)
+/// 移動・回転・スケールのキーは、常に同じ時刻にまとめて打つ
+/// </summary>
 struct BoneTrack
 {
-	int boneIndex_ = -1;
-	AnimationTrack<DirectX::XMFLOAT3>translationTrack_;
-	AnimationTrack<DirectX::XMFLOAT4>rotationTrack_;
-	AnimationTrack<DirectX::XMFLOAT3>scaleTrack_;
+	int boneIndex_ = -1;	//対象のボーン
+	AnimationTrack<DirectX::XMFLOAT3> translationTrack_;
+	AnimationTrack<DirectX::XMFLOAT4> rotationTrack_;
+	AnimationTrack<DirectX::XMFLOAT3> scaleTrack_;
 
 	/// <summary>
-	/// 指定時刻のTransformをサンプリング
+	/// 指定時刻の姿勢を求める
 	/// </summary>
-	/// <param name="time">サンプリング時刻</param>
-	/// <param name="bindPose">バインド姿勢</param>
-	/// <returns>結果のTransform</returns>
-	Transform Sample(float time, const Transform& bindPose) const
+	/// <param name="defaultPose">キーが無いときに使う姿勢</param>
+	Transform Sample(float time, const Transform& defaultPose)const
 	{
 		Transform result;
-		result.translation_ = translationTrack_.Sample(time, bindPose.translation_);
-		result.rotation_ = rotationTrack_.Sample(time, bindPose.rotation_);
-		result.scale_ = scaleTrack_.Sample(time, bindPose.scale_);
+		result.translation_ = translationTrack_.Sample(time, defaultPose.translation_);
+		result.rotation_ = rotationTrack_.Sample(time, defaultPose.rotation_);
+		result.scale_ = scaleTrack_.Sample(time, defaultPose.scale_);
 		return result;
 	}
 
-	/// <summary>
-	/// 現在時刻にTRSをキーフレームとして打つ
-	/// </summary>
-	/// <param name="time">フレーム時刻</param>
-	/// <param name="transform">登録するTransform</param>
+	//指定時刻に姿勢のキーを打つ(既存のキーは上書き)
 	void SetKeyframe(float time, const Transform& transform)
 	{
 		translationTrack_.SetKey(time, transform.translation_);
@@ -189,24 +196,25 @@ struct BoneTrack
 			|| scaleTrack_.FindKey(time) != nullptr;
 	}
 
-	//指定時刻のTRSキーを削除
+	//指定時刻のキーを削除する(どれか1つでも削除したらtrue)
 	bool RemoveKeyframe(float time)
 	{
+		//||だと最初に成功した時点で残りが実行されないので、|で3つとも実行する
 		bool removed = translationTrack_.RemoveKey(time);
 		removed |= rotationTrack_.RemoveKey(time);
 		removed |= scaleTrack_.RemoveKey(time);
 		return removed;
 	}
 
-	//指定時刻のTRSキーの補間方法を取得
-	bool GetInterpolation(float time, InterpolationType& out) const
+	//指定時刻のキーの補間方法を取得する(キーが無ければfalse)
+	bool GetInterpolation(float time, InterpolationType& out)const
 	{
 		return rotationTrack_.GetInterpolation(time, out)
 			|| translationTrack_.GetInterpolation(time, out)
 			|| scaleTrack_.GetInterpolation(time, out);
 	}
 
-	//指定時刻のTRSキーの補間方法をまとめて設定
+	//指定時刻のキーの補間方法を、3本まとめて設定する
 	void SetInterpolation(float time, InterpolationType type)
 	{
 		translationTrack_.SetInterpolation(time, type);
@@ -214,17 +222,11 @@ struct BoneTrack
 		scaleTrack_.SetInterpolation(time, type);
 	}
 
-	/// <summary>
-	/// 指定区間の既存のキーを一掃し、始点終点の姿勢で補間置換
-	/// </summary>
-	/// <param name="rangeStart">始点</param>
-	/// <param name="rangeEnd">終点</param>
-	/// <param name="startTransform">始点のローカルTransoform</param>
-	/// <param name="endTransform">終点のローカルTransform</param>
-	void ReplaceRange(float rangeStart, float rangeEnd, const Transform& startTransform, const Transform& endTransform)
+	//区間内のキーを消し、始点と終点の姿勢でキーを打ち直す
+	void ReplaceRange(float rangeStart, float rangeEnd, const Transform& startPose, const Transform& endPose)
 	{
-		translationTrack_.SetRangeKeys(rangeStart, rangeEnd, startTransform.translation_, endTransform.translation_);
-		rotationTrack_.SetRangeKeys(rangeStart, rangeEnd, startTransform.rotation_, endTransform.rotation_);
-		scaleTrack_.SetRangeKeys(rangeStart, rangeEnd, startTransform.scale_, endTransform.scale_);
+		translationTrack_.SetRangeKeys(rangeStart, rangeEnd, startPose.translation_, endPose.translation_);
+		rotationTrack_.SetRangeKeys(rangeStart, rangeEnd, startPose.rotation_, endPose.rotation_);
+		scaleTrack_.SetRangeKeys(rangeStart, rangeEnd, startPose.scale_, endPose.scale_);
 	}
 };

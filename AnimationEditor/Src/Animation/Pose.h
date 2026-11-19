@@ -2,16 +2,19 @@
 #include<vector>
 #include"../Common/Transform.h"
 
-//全ボーン１フレーム分のローカル姿勢
+/// <summary>
+/// 全ボーン分のローカル姿勢(ある1フレームの姿勢)
+/// </summary>
 struct Pose
 {
-	std::vector<Transform>localTransforms_;
-	//ボーン数に合わせてリサイズ
-	void Resize(size_t boneCount) { localTransforms_.resize(boneCount); }
-	//保持しているボーンの総数を取得
-	size_t GetBoneCoount(void)const { return localTransforms_.size(); }
+	std::vector<Transform> localTransforms_;
 
-	//指定インデっクスのTransformへの参照を取得
+	//ボーン数に合わせてサイズを変える
+	void Resize(size_t boneCount) { localTransforms_.resize(boneCount); }
+	//ボーン数
+	size_t GetBoneCount(void)const { return localTransforms_.size(); }
+
+	//指定ボーンの姿勢
 	Transform& operator[](size_t index) { return localTransforms_[index]; }
 	const Transform& operator[](size_t index)const { return localTransforms_[index]; }
 };

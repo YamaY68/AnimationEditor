@@ -1,57 +1,20 @@
 #pragma once
-#include<Windows.h>
-#include<string>
-#include<vector>
-#include"../Animation/AnimationClip.h"
+#include"../Edit/EditorState.h"
 
-enum class MenuActionType
-{
-    None,           
-    AddAnimation,   
-    ExportFbx
-};
-
+/// <summary>
+/// タイムラインウィンドウ
+/// クリップの選択、再生操作、ブレンド設定、シークバーとキーマーカーを表示する
+/// </summary>
 class TimeLineView
 {
 public:
-    TimeLineView(void) = default;
-    ~TimeLineView(void) = default;
-    
-    /// <summary>
-    /// 上部メインメニュー及びタイムラインウィンドウを描画、再生時間や操作状態を更新
-    /// </summary>
-    /// <param name="hWnd"><ファイルダイアログの親ウィンドウハンドル/param>
-    /// <param name="clips">読み込まれているアニメーションクリップ一覧</param>
-    /// <param name="currentClipIndex">再生、編集中のクリップインデックス</param>
-    /// <param name="inOutTime">現在の再生時刻</param>
-    /// <param name="deltaTime">前フレームからの経過時間</param>
-    /// <param name="outEnableBlend">ブレンド再生が有効かどうかのフラグ</param>
-    /// <param name="outTargetClipIndex">ブレンド先クリップのインデックス</param>
-    /// <param name="outBlendWeight">ブレンドウェイト0~1.0f</param>
-    /// <param name="selectedBoneIndex">マーカー表示対象の選択中のボーンID</param>
-    /// <param name="outSelectedFilePath">ダイアログかあｒ選択されたＦＢＸファイルパスの出力先</param>
-    /// <returns>メニューバーから実行されたアクション種別</returns>
-    MenuActionType Draw(
-        HWND hWnd,
-        const std::vector<AnimationClip>& clips,int& currentClipIndex,
-        float& inOutTime,float deltaTime,
-        bool& outEnableBlend,int& outTargetClipIndex,
-        float& outBlendWeight,int selectedBoneIndex,
-        std::string& outSelectedFilePath
-    );
+	TimeLineView(void) = default;
+	~TimeLineView(void) = default;
 
-    // 現在再生中かどうかを取得する
-    bool IsPlaying(void) const { return isPlaying_; }
-
-    //再生、一時停止状態を切り替える
-    void SetPlaying(bool play) { isPlaying_ = play; }
-
-    //オートキーが有効か
-    bool IsAutoKey(void) const { return autoKey_; }
-private:
-    bool isPlaying_ = true;
-    bool isLoop_ = true;
-    float playbackSpeed_ = 1.0f;
-    bool autoKey_ = true;
+	/// <summary>
+	/// タイムラインを描画し、再生時刻や再生状態を更新する
+	/// </summary>
+	/// <param name="state">エディタの状態(クリップ・再生状態・ブレンド設定などを読み書きする)</param>
+	/// <param name="deltaTime">前のフレームからの経過時間(秒)</param>
+	void Draw(EditorState& state, float deltaTime);
 };
-

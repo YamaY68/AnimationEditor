@@ -3,308 +3,323 @@
 #include<imgui_internal.h>
 #include<cmath>
 #include<algorithm>
-#include"FileDialogHelper.h"
+#include<iterator>
+#include<string>
 #include"../Common/EditorConstants.h"
 
-MenuActionType TimeLineView::Draw(HWND hWnd, const std::vector<AnimationClip>& clips, int& currentClipIndex, float& inOutTime, float deltaTime, bool& outEnableBlend, int& outTargetClipIndex, float& outBlendWeight, int selectedBoneIndex, std::string& outSelectedFilePath)
+namespace
 {
-    MenuActionType action = MenuActionType::None;
-    //出力先のファイルパス文字列を空にしてリセット
-    outSelectedFilePath.clear();
+	//---------- 見た目の設定 ----------
+	constexpr ImVec2 kWindowSize(860.0f, 140.0f);				//ウィンドウの初期サイズ
+	constexpr float kMarkerRadius = 5.0f;						//キーマーカーの大きさ
+	constexpr float kCurrentMarkerRadius = 7.0f;				//再生位置にあるキーマーカーの大きさ
+	constexpr float kMarkerHitRadius = 7.0f;					//キーマーカーのクリック判定の大きさ
+	constexpr ImU32 kMarkerColor = IM_COL32(255, 230, 0, 255);			//キーマーカーの色
+	constexpr ImU32 kCurrentMarkerColor = IM_COL32(255, 255, 255, 255);	//再生位置にあるキーマーカーの色
+	constexpr ImU32 kMarkerOutlineColor = IM_COL32(0, 0, 0, 255);		//キーマーカーの縁の色
+	constexpr float kMinSpeed = -2.0f;							//再生速度の最小(マイナスは逆再生)
+	constexpr float kMaxSpeed = 3.0f;							//再生速度の最大
 
-    //画面最上部のメニューバー
-    if (ImGui::BeginMainMenuBar())
-    {
-        if (ImGui::BeginMenu("File"))
-        {
-            //親モデルにたいして追加のアニメーションFBXを読み込む
-            if (ImGui::MenuItem("AddAnimation(.fbx)"))
-            {
-                //Windows標準のファイルを開くダイアログを表示してパスを取得
-                std::string path = OpenFbxFileDialog(hWnd);
-                if (!path.empty())
-                {
-                    outSelectedFilePath = path;
-                    action = MenuActionType::AddAnimation;
-                }
-            }
-            //メニュー内に水平区切り線を描画
-            ImGui::Separator();
+	/// <summary>
+	/// 修正分のキーの時刻を集める(昇順・重複なし)
+	/// </summary>
+	/// <param name="boneIndex">このボーンのキーだけ集める(-1なら全ボーン)</param>
+	std::vector<float> CollectKeyTimes(const AnimationClip& clip, int boneIndex)
+	{
+		std::vector<float> keyTimes;
+		for (const auto& track : clip.offsetTracks_)
+		{
+			if (boneIndex != -1 && track.boneIndex_ != boneIndex) continue;
 
-            //編集済みアニメーションをFBXとして書き出す
-            if (ImGui::MenuItem("ExportFBX(.fbx)", nullptr, false, !clips.empty()))
-            {
-                //Windows標準の名前をつけて保存ダイアログを表示
-                std::string path = SaveFbxFileDialog(hWnd);
-                if (!path.empty())
-                {
-                    outSelectedFilePath = path;
-                    action = MenuActionType::ExportFbx;
-                }
-            }
-            ImGui::EndMenu();
-        }
-        //メインメニューバー全体の終了
-        ImGui::EndMainMenuBar();
-    }
-    
-    //クリップが一つも読み込まれていない場合はガイド表示
-    if (clips.empty())
-    {
-        ImGui::SetNextWindowSize(ImVec2(500, 80), ImGuiCond_FirstUseEver);
-        ImGui::Begin("Timeline");
-        ImGui::Text("Drag & Drop Base Model (.fbx)");
-        ImGui::Text("Add Animation via File -> AddAnimation(.fbx)");
-        ImGui::End();
-        return action;
-    }
-    //クリップインデックスの安全範囲クランプ
-    if (currentClipIndex < 0 || currentClipIndex >= static_cast<int>(clips.size()))
-    {
-        currentClipIndex = 0;
-    }
-    //現在選択されているクリップへの定数参照を取得
-    const AnimationClip& activeClip = clips[currentClipIndex];
-    //クリップの総再生時間を取得
-    float duration = activeClip.duration_;
+			for (const auto& k : track.translationTrack_.keys_) keyTimes.push_back(k.time_);
+			for (const auto& k : track.rotationTrack_.keys_)    keyTimes.push_back(k.time_);
+			for (const auto& k : track.scaleTrack_.keys_)       keyTimes.push_back(k.time_);
+		}
 
-    //タイムラインウィンドウ本体
-    ImGui::SetNextWindowSize(ImVec2(860, 140), ImGuiCond_FirstUseEver);
-    ImGui::Begin("Timeline");
+		//並べて、同じ時刻のキーを1つにまとめる(移動・回転・スケールは同じ時刻に打たれるため)
+		std::sort(keyTimes.begin(), keyTimes.end());
+		keyTimes.erase(std::unique(keyTimes.begin(), keyTimes.end(), [](float a, float b)
+			{
+				return std::abs(a - b) < EditorConst::kKeyTimeEpsilon;
+			}), keyTimes.end());
+		return keyTimes;
+	}
 
-    //クリップ選択ドロップダウン
-    ImGui::SetNextItemWidth(220.0f);
-    //選択中のクリップ名をプレビュー表示するドロップダウン開始
-    if (ImGui::BeginCombo("Active Clip", activeClip.name_.c_str()))
-    {
-        //読み込まれている全クリップをリスト項目として並べる
-        for (int i = 0; i < static_cast<int>(clips.size()); ++i)
-        {
-            //現在選択中の番号と一致しているか判定
-            bool isSelected = (currentClipIndex == i);
-            //同名クリップがあってもImGuiのIDが衝突しないように
-            std::string label = clips[i].name_ + "##" + std::to_string(i);
-            //リスト項目がクリックされたらクリップを切替、再生時刻を０に戻す
-            if (ImGui::Selectable(label.c_str(), isSelected))
-            {
-                currentClipIndex = i;
-                inOutTime = 0.0f;
-            }
-            //選択中の項目に初期フォーカスを合わせる
-            if (isSelected)
-            {
-                ImGui::SetItemDefaultFocus();
-            }
-        }
-        ImGui::EndCombo();
-    }
-    //同じ行に続けてクリップの総再生時間を表示
-    ImGui::SameLine();
-    ImGui::Text("| Duration:%.2f sec", duration);
+	/// <summary>
+	/// 次(direction=+1)または前(direction=-1)のキーの時刻を求める。端ではループする
+	/// </summary>
+	/// <param name="keyTimes">キーの時刻(昇順に並んでいること)</param>
+	/// <returns>移動先の時刻(キーが無ければtimeのまま)</returns>
+	float FindAdjacentKeyTime(const std::vector<float>& keyTimes, float time, int direction)
+	{
+		if (keyTimes.empty()) return time;
 
-    //再生、一時停止、停止、ループ、再生速度
-    if (ImGui::Button(isPlaying_ ? "Pause" : "Play", ImVec2(60, 0)))
-    {
-        isPlaying_ = !isPlaying_;
-    }
-    //同じ行にStopボタンを配置
-    ImGui::SameLine();
-    if (ImGui::Button("Stop", ImVec2(50, 0)))
-    {
-        isPlaying_ = false;
-        inOutTime = 0.0f;
-    }
-    //同じ行にループ再生の有効無効チェックボタンを配置
-    ImGui::SameLine();
-    ImGui::Checkbox("Loop", &isLoop_);
-    //同じ行に再生速度スライダーを配置
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(110.0f);
-    ImGui::SliderFloat("Speed", &playbackSpeed_, -2.0f, 3.0f, "%.2fx");
-    //同じ行に速度を標準へ戻すボタンを配置
-    ImGui::SameLine();
-    if (ImGui::Button("1.0x"))
-    {
-        playbackSpeed_ = 1.0f;
-    }
+		const float eps = EditorConst::kKeyTimeEpsilon;
+		if (direction > 0)
+		{
+			//今の時刻より後ろの最初のキー。無ければ最初のキーへ
+			auto it = std::upper_bound(keyTimes.begin(), keyTimes.end(), time + eps);
+			return (it != keyTimes.end()) ? *it : keyTimes.front();
+		}
+		//今の時刻より前の最後のキー。無ければ最後のキーへ
+		auto it = std::lower_bound(keyTimes.begin(), keyTimes.end(), time - eps);
+		return (it != keyTimes.begin()) ? *std::prev(it) : keyTimes.back();
+	}
 
-    //オートキーのON/OFF
-    ImGui::SameLine();
-    ImGui::Checkbox("Auto Key", &autoKey_);
+	/// <summary>
+	/// 1フレーム進める(direction=+1)または戻す(direction=-1)。端ではループする
+	/// 端を越えるときは、いったん端で止まってから反対の端へ移る(最終フレームを確実に見られるように)
+	/// </summary>
+	float StepFrame(float time, float duration, int direction)
+	{
+		const float eps = EditorConst::kKeyTimeEpsilon;
+		if (direction > 0)
+		{
+			if (time >= duration - eps) return 0.0f;	//終端にいたら先頭へ
+			return std::min(time + EditorConst::kFrameDuration, duration);
+		}
+		if (time <= eps) return duration;				//先頭にいたら終端へ
+		return std::max(time - EditorConst::kFrameDuration, 0.0f);
+	}
 
-    //複数クリップ読み込みのモーションブレンド設定UI
-    if (clips.size() >= 2)
-    {
-        //ブレンド有効かのチェックボックス
-        ImGui::Checkbox("Blend", &outEnableBlend);
-        if (outEnableBlend)
-        {
-            ImGui::SameLine();
-            //ブレンド相手インデックスが不正な場合はブレンドを強制オフ
-            if (outTargetClipIndex < 0 || outTargetClipIndex >= static_cast<int>(clips.size()))
-            {
-                outEnableBlend = false;
-            }
-            //ブレンド相手クリップを選ぶドロップダウンリスト
-            ImGui::SetNextItemWidth(160.0f);
-            if (ImGui::BeginCombo("##BlendTarget", clips[outTargetClipIndex].name_.c_str()))
-            {
-                for (int i = 0; i < static_cast<int>(clips.size()); ++i)
-                {
-                    bool isSel = (outTargetClipIndex == i);
-                    std::string itemLabel = clips[i].name_ + "##blend" + std::to_string(i);
-                    if (ImGui::Selectable(itemLabel.c_str(), isSel))
-                    {
-                        outTargetClipIndex = i;
-                    }
-                }
-                ImGui::EndCombo();
-            }
-            //ブレンド比率スライダー
-            ImGui::SameLine();
-            ImGui::SetNextItemWidth(150.0f);
-            ImGui::SliderFloat("Weight", &outBlendWeight, 0.0f, 1.0f, "%.2f");
-        }
-    }
-    else
-    {
-        //クリップが１本しかない場合はブレンドを強制オフにする
-        outEnableBlend = false;
-    }
+	/// <summary>
+	/// クリップの選択欄と長さの表示
+	/// </summary>
+	void DrawClipSelector(EditorState& state)
+	{
+		const AnimationClip& activeClip = state.clips[state.currentClipIndex];
 
-    //シークバー
-    ImGui::SetNextItemWidth(-1.0f);
-    ImGui::SliderFloat("##TimeSeek", &inOutTime, 0.0f, (duration > 0.0f ? duration : 1.0f), "%.3f s");
+		ImGui::SetNextItemWidth(220.0f);
+		if (ImGui::BeginCombo("Active Clip", activeClip.name_.c_str()))
+		{
+			for (int i = 0; i < static_cast<int>(state.clips.size()); ++i)
+			{
+				const bool isSelected = (state.currentClipIndex == i);
+				//同じ名前のクリップがあってもImGuiのIDが重ならないように、番号を付ける
+				const std::string label = state.clips[i].name_ + "##" + std::to_string(i);
+				//クリップを切り替えたら、再生時刻を先頭に戻す
+				if (ImGui::Selectable(label.c_str(), isSelected))
+				{
+					state.currentClipIndex = i;
+					state.playback.time = 0.0f;
+				}
+				if (isSelected)
+				{
+					ImGui::SetItemDefaultFocus();
+				}
+			}
+			ImGui::EndCombo();
+		}
+		ImGui::SameLine();
+		ImGui::Text("| Duration:%.2f sec", state.clips[state.currentClipIndex].duration_);
+	}
 
-    ImVec2 barMin = ImGui::GetItemRectMin();
-    ImVec2 barMax = ImGui::GetItemRectMax();
-    float barWidth = barMax.x - barMin.x;
-    float barHeight = barMax.y - barMin.y;
+	/// <summary>
+	/// 再生・停止・ループ・速度・オートキーの操作
+	/// </summary>
+	void DrawPlaybackControls(EditorState& state)
+	{
+		PlaybackState& playback = state.playback;
 
-    //修正分のキーの時刻を収集(ボーン選択中はそのボーンのみ、未選択なら全ボーン)
-    std::vector<float> keyTimes;
-    for (const auto& track : activeClip.offsetTracks_)
-    {
-        if (selectedBoneIndex == -1 || track.boneIndex_ == selectedBoneIndex)
-        {
-            for (const auto& k : track.translationTrack_.keys_) keyTimes.push_back(k.time_);
-            for (const auto& k : track.rotationTrack_.keys_)    keyTimes.push_back(k.time_);
-            for (const auto& k : track.scaleTrack_.keys_)       keyTimes.push_back(k.time_);
-        }
-    }
-    std::sort(keyTimes.begin(), keyTimes.end());
-    keyTimes.erase(std::unique(keyTimes.begin(), keyTimes.end(), [](float a, float b)
-        {
-            return std::abs(a - b) < EditorConst::kKeyTimeEpsilon;
-        }), keyTimes.end());
+		if (ImGui::Button(playback.isPlaying ? "Pause" : "Play", ImVec2(60, 0)))
+		{
+			playback.isPlaying = !playback.isPlaying;
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("Stop", ImVec2(50, 0)))
+		{
+			playback.isPlaying = false;
+			playback.time = 0.0f;
+		}
+		ImGui::SameLine();
+		ImGui::Checkbox("Loop", &playback.isLoop);
 
-    const float keyEps = EditorConst::kKeyTimeEpsilon;
+		ImGui::SameLine();
+		ImGui::SetNextItemWidth(110.0f);
+		ImGui::SliderFloat("Speed", &playback.speed, kMinSpeed, kMaxSpeed, "%.2fx");
+		ImGui::SameLine();
+		if (ImGui::Button("1.0x"))
+		{
+			playback.speed = 1.0f;
+		}
 
-    //←→：前後のキーへ移動　Shift+←→：1フレーム移動(どちらも端でループ)
-    if (!ImGui::GetIO().WantTextInput)
-    {
-        const bool shift = ImGui::GetIO().KeyShift;
-        const float frameStep = EditorConst::kFrameDuration;
+		ImGui::SameLine();
+		ImGui::Checkbox("Auto Key", &state.autoKey);
+	}
 
-        if (ImGui::IsKeyPressed(ImGuiKey_RightArrow))
-        {
-            isPlaying_ = false;
-            if (shift)
-            {
-                //終端を越えたら先頭へ
-                inOutTime += frameStep;
-                if (inOutTime > duration + keyEps) inOutTime = 0.0f;
-                else if (inOutTime > duration) inOutTime = duration;
-            }
-            else if (!keyTimes.empty())
-            {
-                //次のキーが無ければ最初のキーへ
-                auto it = std::upper_bound(keyTimes.begin(), keyTimes.end(), inOutTime + keyEps);
-                inOutTime = (it != keyTimes.end()) ? *it : keyTimes.front();
-            }
-        }
-        if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow))
-        {
-            isPlaying_ = false;
-            if (shift)
-            {
-                //先頭を越えたら終端へ
-                inOutTime -= frameStep;
-                if (inOutTime < -keyEps) inOutTime = duration;
-                else if (inOutTime < 0.0f) inOutTime = 0.0f;
-            }
-            else if (!keyTimes.empty())
-            {
-                //前のキーが無ければ最後のキーへ
-                auto it = std::lower_bound(keyTimes.begin(), keyTimes.end(), inOutTime - keyEps);
-                inOutTime = (it != keyTimes.begin()) ? *(--it) : keyTimes.back();
-            }
-        }
-    }
+	/// <summary>
+	/// ブレンド再生の設定(クリップが2本以上あるときだけ表示)
+	/// </summary>
+	void DrawBlendControls(EditorState& state)
+	{
+		BlendState& blend = state.blend;
 
-    //キーマーカーの描画とクリック選択
-    if (duration > 0.0f && barWidth > 0.0f)
-    {
-        ImDrawList* drawList = ImGui::GetForegroundDrawList();
-        float centerY = barMin.y + barHeight * 0.5f;
-        ImVec2 mouse = ImGui::GetMousePos();
-        bool clicked = ImGui::IsMouseClicked(ImGuiMouseButton_Left);
+		//クリップが1本しかないときは、ブレンドできないのでOFFにする
+		if (state.clips.size() < 2)
+		{
+			blend.enabled = false;
+			return;
+		}
 
-        for (float kt : keyTimes)
-        {
-            float normTime = std::clamp(kt / duration, 0.0f, 1.0f);
-            float posX = barMin.x + normTime * barWidth;
+		ImGui::Checkbox("Blend", &blend.enabled);
+		if (!blend.enabled) return;
 
-            //マーカーがクリックされたらその時刻へジャンプ
-            const float hitR = 7.0f;
-            if (clicked && std::abs(mouse.x - posX) <= hitR && std::abs(mouse.y - centerY) <= hitR)
-            {
-                inOutTime = kt;
-                isPlaying_ = false;
-                ImGui::ClearActiveID();   //下のシークバーがドラッグ状態にならないようにする
-            }
+		//ブレンド相手の番号が範囲外なら、先頭のクリップにする
+		if (!state.IsValidClipIndex(blend.targetClipIndex))
+		{
+			blend.targetClipIndex = 0;
+		}
 
-            //再生位置にあるキーは選択中として白く大きく描く
-            bool isCurrent = std::abs(kt - inOutTime) < keyEps;
-            float r = isCurrent ? 7.0f : 5.0f;
-            ImU32 fill = isCurrent ? IM_COL32(255, 255, 255, 255) : IM_COL32(255, 230, 0, 255);
+		ImGui::SameLine();
+		ImGui::SetNextItemWidth(160.0f);
+		if (ImGui::BeginCombo("##BlendTarget", state.clips[blend.targetClipIndex].name_.c_str()))
+		{
+			for (int i = 0; i < static_cast<int>(state.clips.size()); ++i)
+			{
+				const bool isSelected = (blend.targetClipIndex == i);
+				const std::string label = state.clips[i].name_ + "##blend" + std::to_string(i);
+				if (ImGui::Selectable(label.c_str(), isSelected))
+				{
+					blend.targetClipIndex = i;
+				}
+			}
+			ImGui::EndCombo();
+		}
 
-            ImVec2 diamond[4] = {
-                ImVec2(posX, centerY - r),
-                ImVec2(posX + r, centerY),
-                ImVec2(posX, centerY + r),
-                ImVec2(posX - r, centerY)
-            };
-            drawList->AddConvexPolyFilled(diamond, 4, fill);
-            drawList->AddPolyline(diamond, 4, IM_COL32(0, 0, 0, 255), ImDrawFlags_Closed, 1.5f);
-        }
-    }
+		ImGui::SameLine();
+		ImGui::SetNextItemWidth(150.0f);
+		ImGui::SliderFloat("Weight", &blend.weight, 0.0f, 1.0f, "%.2f");
+	}
 
+	/// <summary>
+	/// ←→：前後のキーへ移動　Shift+←→：1フレーム移動(どちらも端でループ)
+	/// </summary>
+	void HandleKeyNavigation(PlaybackState& playback, const std::vector<float>& keyTimes, float duration)
+	{
+		//文字入力中は矢印キーをカーソル移動に使うので反応しない
+		if (ImGui::GetIO().WantTextInput) return;
 
-    //再生中の時間進行処理
-    if (isPlaying_ && duration > 0.0f)
-    {
-        inOutTime += deltaTime * playbackSpeed_;
+		int direction = 0;
+		if (ImGui::IsKeyPressed(ImGuiKey_RightArrow)) direction = +1;
+		if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow))  direction = -1;
+		if (direction == 0) return;
 
-        if (isLoop_)
-        {
-            if (inOutTime > duration)inOutTime = std::fmod(inOutTime, duration);
-            if (inOutTime < 0.0f)inOutTime += duration;
-        }
-        else
-        {
-            if (inOutTime >= duration)
-            {
-                inOutTime = duration;
-                isPlaying_ = false;
-            }
-            else if (inOutTime <= 0.0f)
-            {
-                inOutTime = 0.0f;
-                isPlaying_ = false;
-            }
-        }
-    }
-    ImGui::End();
-    return action;
+		playback.isPlaying = false;
+		playback.time = ImGui::GetIO().KeyShift
+			? StepFrame(playback.time, duration, direction)
+			: FindAdjacentKeyTime(keyTimes, playback.time, direction);
+	}
+
+	/// <summary>
+	/// シークバーと、その上のキーマーカー(クリックでその時刻へ移動)
+	/// </summary>
+	void DrawSeekBar(PlaybackState& playback, const std::vector<float>& keyTimes, float duration)
+	{
+		ImGui::SetNextItemWidth(-1.0f);
+		ImGui::SliderFloat("##TimeSeek", &playback.time, 0.0f, (duration > 0.0f ? duration : 1.0f), "%.3f s");
+
+		//シークバーの画面上の範囲
+		const ImVec2 barMin = ImGui::GetItemRectMin();
+		const ImVec2 barMax = ImGui::GetItemRectMax();
+		const float barWidth = barMax.x - barMin.x;
+		if (duration <= 0.0f || barWidth <= 0.0f) return;
+
+		//シークバーより手前に描くため、最前面の描画リストを使う
+		ImDrawList* drawList = ImGui::GetForegroundDrawList();
+		const float centerY = (barMin.y + barMax.y) * 0.5f;
+		const ImVec2 mouse = ImGui::GetMousePos();
+		const bool clicked = ImGui::IsMouseClicked(ImGuiMouseButton_Left);
+
+		for (float keyTime : keyTimes)
+		{
+			const float posX = barMin.x + std::clamp(keyTime / duration, 0.0f, 1.0f) * barWidth;
+
+			//マーカーがクリックされたらその時刻へ移動
+			if (clicked && std::abs(mouse.x - posX) <= kMarkerHitRadius && std::abs(mouse.y - centerY) <= kMarkerHitRadius)
+			{
+				playback.time = keyTime;
+				playback.isPlaying = false;
+				ImGui::ClearActiveID();	//下のシークバーがドラッグ状態にならないようにする
+			}
+
+			//再生位置にあるキーは、選択中として白く大きく描く
+			const bool isCurrent = std::abs(keyTime - playback.time) < EditorConst::kKeyTimeEpsilon;
+			const float r = isCurrent ? kCurrentMarkerRadius : kMarkerRadius;
+			const ImVec2 diamond[4] = {
+				ImVec2(posX, centerY - r),
+				ImVec2(posX + r, centerY),
+				ImVec2(posX, centerY + r),
+				ImVec2(posX - r, centerY)
+			};
+			drawList->AddConvexPolyFilled(diamond, 4, isCurrent ? kCurrentMarkerColor : kMarkerColor);
+			drawList->AddPolyline(diamond, 4, kMarkerOutlineColor, ImDrawFlags_Closed, 1.5f);
+		}
+	}
+
+	/// <summary>
+	/// 再生中なら時刻を進める
+	/// </summary>
+	void AdvanceTime(PlaybackState& playback, float deltaTime, float duration)
+	{
+		if (!playback.isPlaying || duration <= 0.0f) return;
+
+		playback.time += deltaTime * playback.speed;
+
+		if (playback.isLoop)
+		{
+			//範囲を出たら反対側へ回り込む(逆再生にも対応)
+			if (playback.time > duration) playback.time = std::fmod(playback.time, duration);
+			if (playback.time < 0.0f)     playback.time += duration;
+		}
+		else
+		{
+			//端に着いたら止める
+			if (playback.time >= duration)
+			{
+				playback.time = duration;
+				playback.isPlaying = false;
+			}
+			else if (playback.time <= 0.0f)
+			{
+				playback.time = 0.0f;
+				playback.isPlaying = false;
+			}
+		}
+	}
+}
+
+void TimeLineView::Draw(EditorState& state, float deltaTime)
+{
+	ImGui::SetNextWindowSize(kWindowSize, ImGuiCond_FirstUseEver);
+	ImGui::Begin("Timeline");
+
+	//クリップが無いときは操作方法を表示するだけ
+	if (state.clips.empty())
+	{
+		ImGui::Text("Drag & Drop Base Model (.fbx)");
+		ImGui::Text("Add Animation via File -> AddAnimation(.fbx)");
+		ImGui::End();
+		return;
+	}
+
+	//クリップの番号が範囲外なら先頭にする
+	if (!state.IsValidClipIndex(state.currentClipIndex))
+	{
+		state.currentClipIndex = 0;
+	}
+
+	DrawClipSelector(state);
+	DrawPlaybackControls(state);
+	DrawBlendControls(state);
+
+	//ここから下は、選択中のクリップについての表示と操作
+	const AnimationClip& clip = state.clips[state.currentClipIndex];
+	const float duration = clip.duration_;
+	const std::vector<float> keyTimes = CollectKeyTimes(clip, state.selectedBoneIndex);
+
+	HandleKeyNavigation(state.playback, keyTimes, duration);
+	DrawSeekBar(state.playback, keyTimes, duration);
+	AdvanceTime(state.playback, deltaTime, duration);
+
+	ImGui::End();
 }
