@@ -194,6 +194,29 @@ bool InspectorView::Draw(const Skeleton& skeleton, Pose& inOutPose, AnimationCli
 					}
 				}
 
+				//再生位置のキーの補間方法(このキーから次のキーまでの動き方)
+				InterpolationType interp;
+				if (currentClip->GetOffsetInterpolation(selectedBoneIndex_, currentTime, interp))
+				{
+					static const char* kInterpNames[] = { "Linear", "Step", "EaseIn", "EaseOut", "EaseInOut" };
+					int current = static_cast<int>(interp);
+					if (current < 0 || current >= IM_ARRAYSIZE(kInterpNames)) current = 0;
+
+					ImGui::Text("Interpolation (to next key):");
+					ImGui::SetNextItemWidth(-1.0f);
+					if (ImGui::Combo("##Interp", &current, kInterpNames, IM_ARRAYSIZE(kInterpNames)))
+					{
+						undoStack.Record(clipIndex, *currentClip);
+						currentClip->SetOffsetInterpolation(selectedBoneIndex_, currentTime,
+							static_cast<InterpolationType>(current));
+						keyEdited = true;
+					}
+				}
+				else
+				{
+					ImGui::TextDisabled("Interpolation: no key at current time");
+				}
+
 				//今の時刻の前後に修正0のキーを打ち、修正の影響範囲を限定する
 				ImGui::SetNextItemWidth(120.0f);
 				ImGui::DragFloat("##LimitRange", &limitRangeSec_, 0.01f, 0.01f, 5.0f, "+-%.2f sec");

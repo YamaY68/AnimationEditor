@@ -156,7 +156,6 @@ void AnimationClip::SetZeroOffsetKey(int boneIndex, float time)
     GetOrCreateOffsetTrack(boneIndex)->SetKeyframe(time, Transform{});
 }
 
-
 bool AnimationClip::HasOffsetKey(int boneIndex, float time) const
 {
     const BoneTrack* track = FindOffsetTrack(boneIndex);
@@ -173,4 +172,22 @@ bool AnimationClip::HasOffsetKey(int boneIndex, float time) const
     return hasKey(track->translationTrack_.keys_)
         || hasKey(track->rotationTrack_.keys_)
         || hasKey(track->scaleTrack_.keys_);
+}
+
+bool AnimationClip::GetOffsetInterpolation(int boneIndex, float time, InterpolationType& out) const
+{
+    const BoneTrack* track = FindOffsetTrack(boneIndex);
+    return track != nullptr && track->GetInterpolation(time, out);
+}
+
+void AnimationClip::SetOffsetInterpolation(int boneIndex, float time, InterpolationType type)
+{
+    for (auto& track : offsetTracks_)
+    {
+        if (track.boneIndex_ == boneIndex)
+        {
+            track.SetInterpolation(time, type);
+            return;
+        }
+    }
 }

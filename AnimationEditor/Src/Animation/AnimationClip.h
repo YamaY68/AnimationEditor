@@ -45,6 +45,10 @@ public:
 	//目標－元の差分
 	static Transform Difference(const Transform& base, const Transform& target);
 
+	//修正分のキーの補間方法を取得 / 設定
+	bool GetOffsetInterpolation(int boneIndex, float time, InterpolationType& out)const;
+	void SetOffsetInterpolation(int boneIndex, float time, InterpolationType type);
+
 	std::string name_;
 	float duration_ = 0.0f;
 	std::vector<BoneTrack> boneTracks_;    //元のトラック

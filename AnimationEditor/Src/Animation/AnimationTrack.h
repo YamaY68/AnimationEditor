@@ -46,7 +46,6 @@ public:
 			if (std::abs(k.time_ - time) < epsilon)
 			{
 				k.value_ = value;
-				k.interpolation_ = interp;
 				k.isUserEdited_ = true;
 				return;
 			}
@@ -70,6 +69,34 @@ public:
 				return std::abs(k.time_ - time) < epsilon;
 			}), keys_.end());
 		return keys_.size() != oldSize;
+	}
+
+	//指定時刻のキーの補間方法を取得(キーが無ければfalse)
+	bool GetInterpolation(float time, InterpolationType& out) const
+	{
+		const float epsilon = 0.001f;
+		for (const auto& k : keys_)
+		{
+			if (std::abs(k.time_ - time) < epsilon)
+			{
+				out = k.interpolation_;
+				return true;
+			}
+		}
+		return false;
+	}
+
+	//指定時刻のキーの補間方法を設定
+	void SetInterpolation(float time, InterpolationType type)
+	{
+		const float epsilon = 0.001f;
+		for (auto& k : keys_)
+		{
+			if (std::abs(k.time_ - time) < epsilon)
+			{
+				k.interpolation_ = type;
+			}
+		}
 	}
 
 	/// <summary>
@@ -167,6 +194,22 @@ struct BoneTrack
 		removed |= rotationTrack_.RemoveKey(time);
 		removed |= scaleTrack_.RemoveKey(time);
 		return removed;
+	}
+
+	//指定時刻のTRSキーの補間方法を取得
+	bool GetInterpolation(float time, InterpolationType& out) const
+	{
+		return rotationTrack_.GetInterpolation(time, out)
+			|| translationTrack_.GetInterpolation(time, out)
+			|| scaleTrack_.GetInterpolation(time, out);
+	}
+
+	//指定時刻のTRSキーの補間方法をまとめて設定
+	void SetInterpolation(float time, InterpolationType type)
+	{
+		translationTrack_.SetInterpolation(time, type);
+		rotationTrack_.SetInterpolation(time, type);
+		scaleTrack_.SetInterpolation(time, type);
 	}
 
 	/// <summary>
