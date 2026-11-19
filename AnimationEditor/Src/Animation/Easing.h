@@ -34,13 +34,12 @@ namespace Easing
 			return t * (2.0f - t);
 			break;
 		case InterpolationType::EaseInOut:
-			return(t < 0.5f) ? (2.0f * t * t) : (-1.0 + (4.0f - 2.0f * t) * t);
+			return(t < 0.5f) ? (2.0f * t * t) : (-1.0f + (4.0f - 2.0f * t) * t);
 			break;
 		case InterpolationType::CubicBezier:
-	
-			break;
+			return t;
 		default:
-			break;
+			return t;
 		}
 	}
 }

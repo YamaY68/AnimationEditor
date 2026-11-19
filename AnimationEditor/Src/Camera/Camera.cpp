@@ -55,8 +55,8 @@ void Camera::Update(bool UsingUI)
 			float rightY = std::sin(yaw_);
 
 			float panSpeed = distance_ * 0.001f;
-			target_.x -= (-rightX * deltaX) * panSpeed;
-			target_.z -= (-rightX * deltaX) * panSpeed;
+			target_.x += rightX * deltaX * panSpeed;
+			target_.z -= rightY * deltaX * panSpeed;
 			target_.y += deltaY * panSpeed;
 		}
 	}

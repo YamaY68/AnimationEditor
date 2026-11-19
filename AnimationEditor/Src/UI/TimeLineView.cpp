@@ -185,7 +185,7 @@ MenuActionType TimeLineView::Draw(HWND hWnd, const std::vector<AnimationClip>& c
         std::vector<float>keyTimes;
 
         // クリップ内の全ボーントラックを走査
-        for (const auto& track : activeClip.boneTracks_)
+        for (const auto& track : activeClip.offsetTracks_)
         {
             // ボーン未選択(-1)なら全ボーン、選択中ならそのボーンのトラックのみ対象にする
             if (selectedBoneIndex == -1 || track.boneIndex_ == selectedBoneIndex)

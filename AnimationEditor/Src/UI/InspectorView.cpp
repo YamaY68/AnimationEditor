@@ -1,23 +1,20 @@
 #include "InspectorView.h"
 #include<imgui.h>
 #include<DirectXMath.h>
+#include<algorithm>
 #include<cmath>
 using namespace DirectX;
 static XMFLOAT3 QuaternionToEuler(const XMFLOAT4& q)
 {
-	//Z軸回りの回転角をアークタンジェント(Roll)
-	float sinr_cosp = 2.0f * (q.w * q.x + q.y * q.z);
-	float cosr_cosp = 1.0f - 2.0f * (q.x * q.x + q.y * q.y);
-	float roll = std::atan2(sinr_cosp, cosr_cosp);
+	//X軸回りの回転角(Pitch)
+	float sinp = 2.0f * (q.w * q.x - q.y * q.z);
+	float pitch = std::asin(std::clamp(sinp, -1.0f, 1.0f));
 
-	//X軸回りの回転角のアークサイン(Pitch)
-	float sinp = 2.0f * (q.w * q.y - q.z * q.x);
-	float pitch = (std::abs(sinp) >= 1.0f) ? std::copysign(XM_PIDIV2, sinp) : std::asin(sinp);
+	//Y軸回りの回転角(Yaw)
+	float yaw = std::atan2(2.0f * (q.x * q.z + q.w * q.y), 1.0f - 2.0f * (q.x * q.x + q.y * q.y));
 
-	//Y軸回りの回転角をアークタンジェント(Yaw)
-	float siny_cosp = 2.0f * (q.w * q.z + q.x * q.y);
-	float cosy_cosp = 1.0f - 2.0f * (q.y * q.y + q.z * q.z);
-	float yaw = std::atan2(siny_cosp, cosy_cosp);
+	//Z軸回りの回転角(Roll)
+	float roll = std::atan2(2.0f * (q.x * q.y + q.w * q.z), 1.0f - 2.0f * (q.x * q.x + q.z * q.z));
 
 	//ラジアンから度数法へ変換
 	return { XMConvertToDegrees(pitch), XMConvertToDegrees(yaw), XMConvertToDegrees(roll) };
@@ -117,7 +114,10 @@ bool InspectorView::Draw(const Skeleton& skeleton, Pose& inOutPose, AnimationCli
 			//初期バインドポーズ
 			if (ImGui::Button("Reset", ImVec2(-1, 24)))
 			{
-				trs = bone.bindPoseLocal_;
+				//クリップがあれば元の動きの姿勢、無ければバインドポーズに戻す
+				trs = currentClip
+					? currentClip->SampleBaseBone(selectedBoneIndex_, currentTime, skeleton)
+					: bone.bindPoseLocal_;
 			}
 
 			ImGui::Separator();
@@ -125,11 +125,9 @@ bool InspectorView::Draw(const Skeleton& skeleton, Pose& inOutPose, AnimationCli
 			//キーフレーム登録、区間置換操作UI
 			if (currentClip != nullptr)
 			{
-				//単発キー
 				if (ImGui::Button("Key Selected Bone (K)", ImVec2(-1, 28)))
 				{
-					BoneTrack* track = currentClip->GetOrCreateTrack(selectedBoneIndex_);
-					track->SetKeyframe(currentTime, trs);
+					currentClip->SetOffsetKey(selectedBoneIndex_, currentTime, trs, skeleton);
 					keyEdited = true;
 				}
 
@@ -158,13 +156,10 @@ bool InspectorView::Draw(const Skeleton& skeleton, Pose& inOutPose, AnimationCli
 				if (ImGui::Button("Set Out&Replace Range", ImVec2(-1, 28)))
 				{
 					rangeEndTime_ = currentTime;
-					//In点が未設定だった場合、現在の姿勢を開始地点としてフォールバック使用
 					Transform startPose = hasRangeStartPose_ ? rangeStartTrs_ : trs;
 
-					BoneTrack* track = currentClip->GetOrCreateTrack(selectedBoneIndex_);
-					track->ReplaceRange(rangeStartTime_, rangeEndTime_, startPose, trs);
+					currentClip->ReplaceOffsetRange(selectedBoneIndex_, rangeStartTime_, rangeEndTime_, startPose, trs, skeleton);
 
-					//置換完了後、次の編集点に備えてIn点フラグをリセット
 					hasRangeStartPose_ = false;
 					keyEdited = true;
 				}
