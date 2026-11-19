@@ -12,7 +12,7 @@ bool Application::Init(void)
     SetUseDirect3DVersion(DX_DIRECT3D_11);
 
     if (DxLib_Init() == -1) return false;
-
+    SetDragFileValidFlag(true);
     SetDrawScreen(DX_SCREEN_BACK);
     SetUseZBuffer3D(TRUE);
     SetWriteZBuffer3D(TRUE);
@@ -107,18 +107,27 @@ void Application::ProcessDroppedFiles(void)
     std::vector<std::string> droppedFiles = imguiManager_.PopDroppedFiles();
     for (const auto& file : droppedFiles)
     {
+        OutputDebugStringA(("[Drop] éÛêM: " + file + "\n").c_str());
+
         std::string ext = std::filesystem::path(file).extension().string();
         if (ext == ".fbx" || ext == ".FBX")
         {
-            LoadParentModel(file);
+            bool ok = LoadParentModel(file);
+            OutputDebugStringA(ok ? "[Drop] ì«Ç›çûÇ›ê¨å˜\n" : "[Drop] ì«Ç›çûÇ›é∏îs\n");
+        }
+        else
+        {
+            OutputDebugStringA(("[Drop] ägí£éqÇ™ëŒè€äO: " + ext + "\n").c_str());
         }
     }
 }
-
 bool Application::LoadParentModel(const std::string& filePath)
 {
     Skeleton newSkeleton;
     FbxMeshModel newMesh;
+
+    OutputDebugStringA("[Load] LoadSkeleton é∏îs\n");          // 1Ç¬ñ⁄
+    OutputDebugStringA("[Load] LoadMeshWithSkinning é∏îs\n");   // 2Ç¬ñ⁄
 
     if (!loader_.LoadSkeleton(filePath, newSkeleton))
     {
