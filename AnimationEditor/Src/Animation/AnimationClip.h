@@ -68,7 +68,11 @@ public:
 	float duration_ = 0.0f;					//長さ(秒)
 	std::vector<BoneTrack> boneTracks_;		//元の動き
 	std::vector<BoneTrack> offsetTracks_;	//修正分
-
+	//---------- 遅延読み込み ----------
+//モデルのFBXに入っているアニメーションは、最初は名前と長さだけを読み、選ばれたときに中身を読む
+	bool isLoaded_ = true;		//元の動き(boneTracks_)を読み込み済みか
+	int sourceStackIndex_ = -1;	//読み込み元のAnimStackの番号
+	int sourceSceneId_ = -1;	//読み込み元のシーンの番号(モデルを読み込み直すと変わる)
 private:
 	//時刻を0～duration_の範囲に折り返す(終端ちょうどは折り返さない)
 	float WrapTime(float time)const;

@@ -172,6 +172,14 @@ bool Application::UpdateUI(float deltaTime)
 	//タイムライン(再生時刻が進む)
 	timelineView_.Draw(state_, deltaTime);
 
+	//タイムラインで選ばれたクリップ(とブレンド先)の中身がまだなら、ここで読み込む
+//(インスペクターが元の動きを使うので、インスペクターより前に読み込んでおく)
+	EnsureClipLoaded(state_.currentClipIndex);
+	if (state_.blend.enabled)
+	{
+		EnsureClipLoaded(state_.blend.targetClipIndex);
+	}
+
 	//インスペクター(モデルが無いときは編集するものが無いので出さない)
 	if (!skeletonLoaded_) return false;
 	const InspectorResult inspector = inspectorView_.Draw(skeleton_, finalPose_, state_);
@@ -183,6 +191,22 @@ bool Application::UpdateUI(float deltaTime)
 	}
 
 	return inspector.keyEdited;
+}
+
+void Application::EnsureClipLoaded(int clipIndex)
+{
+	if (!state_.IsValidClipIndex(clipIndex)) return;
+
+	AnimationClip& clip = state_.clips[clipIndex];
+	if (clip.isLoaded_) return;
+
+	if (!loader_.LoadEmbeddedAnimation(skeleton_, clip))
+	{
+		OutputDebugStringA(("[Load] アニメーションの読み込み失敗: " + clip.name_ + "\n").c_str());
+	}
+	//失敗しても読み込み済みにする(毎フレーム読み込みを試して重くならないように)
+	clip.isLoaded_ = true;
+	poseDirty_ = true;
 }
 
 void Application::UpdatePose(bool forceResample)
@@ -352,8 +376,9 @@ bool Application::LoadParentModel(const std::string& filePath)
 	//モデルの大きさはモデルごとに違うので、カメラを合わせ直す
 	FrameCameraToModel();
 	//モデルのFBXにアニメーションが入っていれば、クリップとして追加する
+	//(ここでは名前と長さだけ。中身は、そのクリップが選ばれたときに読み込む)
 	std::vector<AnimationClip> embeddedClips;
-	if (loader_.LoadEmbeddedAnimations(skeleton_, embeddedClips) > 0)
+	if (loader_.ListEmbeddedAnimations(embeddedClips) > 0)
 	{
 		AddClips(std::move(embeddedClips), filePath);
 	}

@@ -39,9 +39,14 @@ public:
 	//戻り値:読み込めたクリップの数
 	int LoadAnimations(const std::string& filePath, const Skeleton& skeleton, std::vector<AnimationClip>& outClips);
 
-	//LoadSkeletonで開いたモデルのFBXに入っているアニメーションを読み込む(ファイルは開き直さない)
-	//戻り値:読み込めたクリップの数
-	int LoadEmbeddedAnimations(const Skeleton& skeleton, std::vector<AnimationClip>& outClips);
+	//モデルのFBXに入っているアニメーションの「名前と長さ」だけを読み込む(中身はまだ読まない)
+	//中身はクリップが選ばれたときに、LoadEmbeddedAnimationで読み込む
+	//戻り値:見つかったクリップの数
+	int ListEmbeddedAnimations(std::vector<AnimationClip>& outClips);
+
+	//ListEmbeddedAnimationsで作ったクリップの中身(元の動き)を読み込む
+	//モデルを読み込み直したあとなど、読み込み元のシーンがもう無ければfalse
+	bool LoadEmbeddedAnimation(const Skeleton& skeleton, AnimationClip& inOutClip); 
 private:
 	//ボーンとして扱うノードを集める
 	//(スケルトン属性のノード＋スキンが参照しているノード＋それらの祖先)
@@ -65,5 +70,6 @@ private:
 	FbxManager* fbxManager_ = nullptr;	//FBX　SDK全体のメモリ、オブジェクト工場
 	FbxIOSettings* ioSetting_ = nullptr;	//読み込み時の設定
 	FbxScene* fbxScene_ = nullptr;	//現在開いている１体分のFBXシーンデータ全体
+	int sceneId_ = 0;	//fbxScene_を入れ替えるたびに増やす番号(遅延読み込みのクリップが、どのシーンのものか確かめるため)
 	std::unordered_map<FbxNode*, int> nodeToBone_;	//ノード→ボーン番号(LoadSkeletonで作り、メッシュの読み込みで使う)
 };

@@ -223,9 +223,9 @@ bool FbxModelLoader::LoadSkeleton(const std::string& filePath, Skeleton& outSkel
 	FbxScene* scene = ImportScene(filePath, "ImportScene");
 	if (!scene) return false;
 
-	//前回のシーンを破棄して入れ替える(メッシュと埋め込みアニメーションの読み込みで使う)
 	if (fbxScene_) fbxScene_->Destroy();
 	fbxScene_ = scene;
+	++sceneId_;	//シーンが替わったので、前のシーンの遅延読み込みクリップは使えなくなる
 
 	//ボーンとして扱うノードを先に集めてから、ルートノードから深さ優先探索でボーン階層を構築
 	nodeToBone_.clear();
@@ -443,21 +443,53 @@ int FbxModelLoader::LoadAnimations(const std::string& filePath, const Skeleton& 
 	return count;
 }
 
-int FbxModelLoader::LoadEmbeddedAnimations(const Skeleton& skeleton, std::vector<AnimationClip>& outClips)
+int FbxModelLoader::ListEmbeddedAnimations(std::vector<AnimationClip>& outClips)
 {
 	if (!fbxScene_) return 0;
-	return SampleAllAnimStacks(fbxScene_, skeleton, outClips);
+
+	int count = 0;
+	const int animStackCount = fbxScene_->GetSrcObjectCount<FbxAnimStack>();
+	for (int i = 0; i < animStackCount; ++i)
+	{
+		FbxAnimStack* animStack = fbxScene_->GetSrcObject<FbxAnimStack>(i);
+
+		//長さだけは先に求めておく(タイムラインに表示するため。中身を読むより、ずっと軽い)
+		FbxTime startTime;
+		float duration = 0.0f;
+		GetAnimStackTimeSpan(fbxScene_, animStack, startTime, duration);
+		if (duration <= 0.0f) continue;	//長さの無いAnimStackは、アニメーションとして扱わない
+
+		AnimationClip clip;
+		clip.name_ = animStack->GetName();
+		clip.duration_ = duration;
+		clip.isLoaded_ = false;			//中身はまだ読んでいない
+		clip.sourceStackIndex_ = i;
+		clip.sourceSceneId_ = sceneId_;
+		outClips.push_back(std::move(clip));
+		++count;
+	}
+	return count;
 }
 
+bool FbxModelLoader::LoadEmbeddedAnimation(const Skeleton& skeleton, AnimationClip& inOutClip)
+{
+	//読み込み元のシーンが、もう別のモデルに入れ替わっていたら読み込めない
+	if (!fbxScene_ || inOutClip.sourceSceneId_ != sceneId_) return false;
+
+	FbxAnimStack* animStack = fbxScene_->GetSrcObject<FbxAnimStack>(inOutClip.sourceStackIndex_);
+	return SampleAnimStack(fbxScene_, animStack, skeleton, inOutClip);
+}
 int FbxModelLoader::SampleAllAnimStacks(FbxScene* scene, const Skeleton& skeleton, std::vector<AnimationClip>& outClips)
 {
 	int count = 0;
 	const int animStackCount = scene->GetSrcObjectCount<FbxAnimStack>();
 	for (int i = 0; i < animStackCount; ++i)
 	{
+		FbxAnimStack* animStack = scene->GetSrcObject<FbxAnimStack>(i);
 		AnimationClip clip;
-		if (SampleAnimStack(scene, scene->GetSrcObject<FbxAnimStack>(i), skeleton, clip))
+		if (SampleAnimStack(scene, animStack, skeleton, clip))
 		{
+			clip.name_ = animStack->GetName();
 			outClips.push_back(std::move(clip));
 			++count;
 		}
@@ -477,7 +509,6 @@ bool FbxModelLoader::SampleAnimStack(FbxScene* scene, FbxAnimStack* animStack, c
 	GetAnimStackTimeSpan(scene, animStack, startTime, duration);
 	if (duration <= 0.0f) return false;	//長さの無いAnimStackは、アニメーションとして扱わない
 
-	outClip.name_ = animStack->GetName();
 	outClip.duration_ = duration;
 	outClip.boneTracks_.clear();
 	outClip.boneTracks_.reserve(skeleton.GetBoneCount());

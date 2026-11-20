@@ -43,6 +43,8 @@ private:
 	//UI(メニュー・タイムライン・インスペクター)を描画し、操作を反映する
 	//戻り値:キーが変更されたか(ポーズを計算し直す必要があるか)
 	bool UpdateUI(float deltaTime);
+	//指定したクリップの中身がまだ読み込まれていなければ読み込む(遅延読み込み)
+	void EnsureClipLoaded(int clipIndex);
 	//アニメーションからポーズを求め、スキニングまで行う
 	void UpdatePose(bool forceResample);
 	//今のクリップ(とブレンド先)からポーズを求める
