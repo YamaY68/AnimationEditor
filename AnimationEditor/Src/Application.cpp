@@ -349,7 +349,12 @@ bool Application::LoadParentModel(const std::string& filePath)
 
 	//モデルが替わったので、クリップ・選択・Undoなどをリセットする
 	state_.ResetForNewModel();
-
+	//モデルのFBXにアニメーションが入っていれば、クリップとして追加する
+	std::vector<AnimationClip> embeddedClips;
+	if (loader_.LoadEmbeddedAnimations(skeleton_, embeddedClips) > 0)
+	{
+		AddClips(std::move(embeddedClips), filePath);
+	}
 	//バインドポーズを表示する
 	currentPose_ = skeleton_.CreateBindPose();
 	targetPose_ = skeleton_.CreateBindPose();
@@ -362,14 +367,32 @@ void Application::AddAnimation(const std::string& filePath)
 {
 	if (!skeletonLoaded_ || filePath.empty()) return;
 
-	AnimationClip newClip;
-	if (!loader_.LoadAnimation(filePath, skeleton_, newClip)) return;
+	std::vector<AnimationClip> newClips;
+	if (loader_.LoadAnimations(filePath, skeleton_, newClips) > 0)
+	{
+		AddClips(std::move(newClips), filePath);
+	}
+}
 
-	newClip.name_ = std::filesystem::path(filePath).stem().string();
-	state_.clips.push_back(std::move(newClip));
+void Application::AddClips(std::vector<AnimationClip>&& clips, const std::string& filePath)
+{
+	if (clips.empty()) return;
 
-	//追加したクリップを選択し、先頭から再生する
-	state_.currentClipIndex = static_cast<int>(state_.clips.size()) - 1;
+	//1本だけならファイル名、複数あれば「ファイル名/AnimStack名」にする
+	//(AnimStack名は"Take 001"や"mixamo.com"のように、どのファイルでも同じことが多いため)
+	const std::string fileName = std::filesystem::path(filePath).stem().string();
+	const bool hasMultiple = clips.size() > 1;
+
+	//追加した最初のクリップを選択できるよう、追加前の数を覚えておく
+	const int firstNewIndex = static_cast<int>(state_.clips.size());
+	for (AnimationClip& clip : clips)
+	{
+		clip.name_ = hasMultiple ? (fileName + "/" + clip.name_) : fileName;
+		state_.clips.push_back(std::move(clip));
+	}
+
+	//追加した最初のクリップを、先頭から再生する
+	state_.currentClipIndex = firstNewIndex;
 	state_.playback.time = 0.0f;
 	poseDirty_ = true;
 }

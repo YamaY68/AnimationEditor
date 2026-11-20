@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <functional>
 #include <unordered_map>
+#include <system_error>
 #include <DxLib.h>
 #include "../Common/EditorConstants.h"
 using namespace DirectX;
@@ -20,6 +21,16 @@ static XMFLOAT4X4 ToXMFLOAT4X4(const FbxAMatrix& src)
         }
     }
     return dst;
+}
+
+// UTF-8の文字列(FBX SDKが返すもの)を、Shift-JIS(DxLibに渡すもの)に変換する
+static std::string Utf8ToAnsi(const char* utf8)
+{
+    char* ansi = nullptr;
+    FbxUTF8ToAnsi(utf8, ansi);	// FBX SDK付属の変換関数(変換後の文字列はFbxFreeで解放する)
+    std::string result = ansi ? ansi : "";
+    FbxFree(ansi);
+    return result;
 }
 
 // FBX SDK が .fbm へ展開したテクスチャをロードしてハンドルを返す
@@ -62,23 +73,74 @@ static int LoadFbxNodeTexture(FbxNode* node, std::unordered_map<FbxVideo*, int>&
             return it->second;
         }
 
-        // ★重要：FbxString を一時変数に受けて寿命を延ばしてから文字列を取り出す（文字化け防止）
+        //FbxStringを一時変数に受けてから文字列を取り出す(一時オブジェクトのまま使うと、文の終わりで消えるため)
         FbxString fileNameStr = video->GetFileName();
-        std::string extractedPath = fileNameStr.Buffer();
+        const char* utf8Path = fileNameStr.Buffer();
+        if (utf8Path == nullptr || utf8Path[0] == '\0') continue;
 
-        if (!extractedPath.empty() && std::filesystem::exists(extractedPath))
+        try
         {
-            int handle = LoadGraph(extractedPath.c_str());
-            if (handle != -1)
-            {
-                cache[video] = handle;
-                return handle;
-            }
+            //FBX SDKのパスはUTF-8なので、char8_tとして渡してUTF-8だと伝える
+            //(std::stringのまま渡すと、Shift-JISとして変換されて、日本語などが入っていると例外になる)
+            std::error_code ec;
+            const std::filesystem::path texPath(reinterpret_cast<const char8_t*>(utf8Path));
+            if (!std::filesystem::exists(texPath, ec)) continue;
+        }
+        catch (const std::exception&)
+        {
+            //それでも変換できないパス(壊れた文字列など)は、テクスチャなしとして扱う
+            continue;
+        }
+
+        //DxLibはShift-JISでパスを受け取るので、変換してから渡す
+        int handle = LoadGraph(Utf8ToAnsi(utf8Path).c_str());
+        if (handle != -1)
+        {
+            cache[video] = handle;
+            return handle;
         }
     }
 
     return -1;
 }
+
+
+// FbxAMatrix(ローカル行列)を、移動・回転・スケールに分けてTransformにする
+static Transform ToTransform(const FbxAMatrix& m)
+{
+    FbxVector4 t = m.GetT();
+    FbxQuaternion q = m.GetQ();
+    FbxVector4 s = m.GetS();
+    return Transform(
+        XMFLOAT3(static_cast<float>(t[0]), static_cast<float>(t[1]), static_cast<float>(t[2])),
+        XMFLOAT4(static_cast<float>(q[0]), static_cast<float>(q[1]), static_cast<float>(q[2]), static_cast<float>(q[3])),
+        XMFLOAT3(static_cast<float>(s[0]), static_cast<float>(s[1]), static_cast<float>(s[2])));
+}
+
+// AnimStackの開始時刻と長さ(秒)を求める
+// FBXによって長さの書き込み場所が違うので、AnimStack → TakeInfo → シーン全体のタイムライン の順に探す
+static void GetAnimStackTimeSpan(FbxScene* scene, FbxAnimStack* animStack, FbxTime& outStart, float& outDuration)
+{
+    //これより短い長さは「記録されていない」とみなす
+    constexpr float kMinValidDuration = 0.05f;
+
+    FbxTimeSpan timeSpan = animStack->GetLocalTimeSpan();
+    outStart = timeSpan.GetStart();
+    outDuration = static_cast<float>(timeSpan.GetDuration().GetSecondDouble());
+    if (outDuration > kMinValidDuration) return;
+
+    if (FbxTakeInfo* takeInfo = scene->GetTakeInfo(animStack->GetName()))
+    {
+        outStart = takeInfo->mLocalTimeSpan.GetStart();
+        outDuration = static_cast<float>(takeInfo->mLocalTimeSpan.GetDuration().GetSecondDouble());
+        if (outDuration > kMinValidDuration) return;
+    }
+
+    scene->GetGlobalSettings().GetTimelineDefaultTimeSpan(timeSpan);
+    outStart = timeSpan.GetStart();
+    outDuration = static_cast<float>(timeSpan.GetDuration().GetSecondDouble());
+}
+
 FbxModelLoader::FbxModelLoader(void)
 {
 }
@@ -121,22 +183,39 @@ void FbxModelLoader::Finalize(void)
     }
 }
 
+FbxScene* FbxModelLoader::ImportScene(const std::string& filePath, const char* sceneName)
+{
+    if (!Initialize()) return nullptr;
+
+    fbxsdk::FbxImporter* importer = fbxsdk::FbxImporter::Create(fbxManager_, "");
+    if (!importer->Initialize(filePath.c_str(), -1, ioSetting_))
+    {
+        importer->Destroy();
+        return nullptr;
+    }
+
+    FbxScene* scene = FbxScene::Create(fbxManager_, sceneName);
+    const bool imported = importer->Import(scene);
+    importer->Destroy();
+
+    if (!imported)
+    {
+        scene->Destroy();
+        return nullptr;
+    }
+    return scene;
+}
+
 /// FBXファイルからボーン階層を構築する
 bool FbxModelLoader::LoadSkeleton(const std::string& filePath, Skeleton& outSkeleton)
 {
-    if (!Initialize()) return false;
-    //インポーターを作成してFBXファイルを開く
-    fbxsdk::FbxImporter* sdkImporter = fbxsdk::FbxImporter::Create(fbxManager_, "");
-    if (!sdkImporter->Initialize(filePath.c_str(), -1, ioSetting_))
-    {
-        sdkImporter->Destroy();
-        return false;
-    }
-    //前回のシーンが残っていれば新しいシーンへインポートする
+    FbxScene* scene = ImportScene(filePath, "ImportScene");
+    if (!scene) return false;
+
+    //前回のシーンを破棄して入れ替える(メッシュと埋め込みアニメーションの読み込みで使う)
     if (fbxScene_) fbxScene_->Destroy();
-    fbxScene_ = FbxScene::Create(fbxManager_, "ImportScene");
-    sdkImporter->Import(fbxScene_);
-    sdkImporter->Destroy();
+    fbxScene_ = scene;
+
     //シーンのルートノードから深さ優先探索でボーン階層を構築
     FbxNode* rootNode = fbxScene_->GetRootNode();
     if (rootNode)
@@ -177,8 +256,19 @@ bool FbxModelLoader::LoadMeshWithSkinning(const std::string& filepath, Skeleton&
     {
         FbxMesh* mesh = node->GetMesh();
         if (!mesh) continue;
-        //メッシュノード自身のバインド時ワールド変換行列
-        FbxAMatrix meshGlobal = node->EvaluateGlobalTransform(0);
+        //メッシュのバインド時(スキンを付けたとき)のワールド行列
+        //スキンがあれば、スキンを付けたときに記録された行列(クラスタのTransformMatrix)を使う
+        //無ければ、アニメーションを含まない初期状態の行列を使う
+        //(フレーム0の行列を使うと、モデルにアニメーションが入っているときに、その姿勢で頂点が固定されてしまう)
+        FbxAMatrix meshGlobal = node->EvaluateGlobalTransform(FBXSDK_TIME_INFINITE);
+        if (mesh->GetDeformerCount(FbxDeformer::eSkin) > 0)
+        {
+            FbxSkin* firstSkin = static_cast<FbxSkin*>(mesh->GetDeformer(0, FbxDeformer::eSkin));
+            if (firstSkin && firstSkin->GetClusterCount() > 0)
+            {
+                firstSkin->GetCluster(0)->GetTransformMatrix(meshGlobal);
+            }
+        }
         //コントロールポイント
         int cpCount = mesh->GetControlPointsCount();
         FbxVector4* controlPoints = mesh->GetControlPoints();
@@ -309,95 +399,83 @@ bool FbxModelLoader::LoadMeshWithSkinning(const std::string& filepath, Skeleton&
     return !outMeshModel.sourceVertices_.empty();
 }
 
-bool FbxModelLoader::LoadAnimation(const std::string& filePath, const Skeleton& skeleton, AnimationClip& outClip)
+int FbxModelLoader::LoadAnimations(const std::string& filePath, const Skeleton& skeleton, std::vector<AnimationClip>& outClips)
 {
-    if (!Initialize()) return false;
+    //アニメーション読み込み用の一時シーン(モデルのシーンとは別に開く)
+    FbxScene* scene = ImportScene(filePath, "AnimScene");
+    if (!scene) return 0;
 
-    fbxsdk::FbxImporter* sdkImporter = fbxsdk::FbxImporter::Create(fbxManager_, "");
-    if (!sdkImporter->Initialize(filePath.c_str(), -1, ioSetting_))
+    const int count = SampleAllAnimStacks(scene, skeleton, outClips);
+    scene->Destroy();
+    return count;
+}
+
+int FbxModelLoader::LoadEmbeddedAnimations(const Skeleton& skeleton, std::vector<AnimationClip>& outClips)
+{
+    if (!fbxScene_) return 0;
+    return SampleAllAnimStacks(fbxScene_, skeleton, outClips);
+}
+
+int FbxModelLoader::SampleAllAnimStacks(FbxScene* scene, const Skeleton& skeleton, std::vector<AnimationClip>& outClips)
+{
+    int count = 0;
+    const int animStackCount = scene->GetSrcObjectCount<FbxAnimStack>();
+    for (int i = 0; i < animStackCount; ++i)
     {
-        sdkImporter->Destroy();
-        return false;
+        AnimationClip clip;
+        if (SampleAnimStack(scene, scene->GetSrcObject<FbxAnimStack>(i), skeleton, clip))
+        {
+            outClips.push_back(std::move(clip));
+            ++count;
+        }
     }
-    //アニメーション読み込み用の一時シーンを作成
-    FbxScene* scene = FbxScene::Create(fbxManager_, "AnimScene");
-    sdkImporter->Import(scene);
-    sdkImporter->Destroy();
-    //シーン内にアニメーションデータがなければ終了
-    int animStackCount = scene->GetSrcObjectCount<FbxAnimStack>();
-    if (animStackCount == 0)
-    {
-        scene->Destroy();
-        return false;
-    }
-    //０番目のアニメスタックをアクティブに設定しないとEvaluteLocalTransformが常に静止ポーズを返す
-    FbxAnimStack* animStack = scene->GetSrcObject<FbxAnimStack>(0);
+    return count;
+}
+
+bool FbxModelLoader::SampleAnimStack(FbxScene* scene, FbxAnimStack* animStack, const Skeleton& skeleton, AnimationClip& outClip)
+{
+    if (!animStack) return false;
+
+    //このAnimStackを有効にする(有効にしないと、EvaluateLocalTransformがアニメーションの無い姿勢を返す)
     scene->SetCurrentAnimationStack(animStack);
 
-    outClip.name_ = animStack->GetName();
-    //アニメーションの開始時刻の長さを取得
-    FbxTimeSpan timeSpan = animStack->GetLocalTimeSpan();
-    FbxTime startTime = timeSpan.GetStart();
-    float duration = static_cast<float>(timeSpan.GetDuration().GetSecondDouble());
-    //LoaclTimeSpanが空のFBXの場合はTakeInfoやグローバルタイムラインから長さを取得する
-    if (duration <= 0.05f)
-    {
-        FbxTakeInfo* takeInfo = scene->GetTakeInfo(animStack->GetName());
-        if (takeInfo)
-        {
-            startTime = takeInfo->mLocalTimeSpan.GetStart();
-            duration = static_cast<float>(takeInfo->mLocalTimeSpan.GetDuration().GetSecondDouble());
-        }
-        else
-        {
-            scene->GetGlobalSettings().GetTimelineDefaultTimeSpan(timeSpan);
-            startTime = timeSpan.GetStart();
-            duration = static_cast<float>(timeSpan.GetDuration().GetSecondDouble());
-        }
-    }
+    FbxTime startTime;
+    float duration = 0.0f;
+    GetAnimStackTimeSpan(scene, animStack, startTime, duration);
+    if (duration <= 0.0f) return false;	//長さの無いAnimStackは、アニメーションとして扱わない
 
+    outClip.name_ = animStack->GetName();
     outClip.duration_ = duration;
     outClip.boneTracks_.clear();
     outClip.boneTracks_.reserve(skeleton.GetBoneCount());
 
-    float startSec = static_cast<float>(startTime.GetSecondDouble());
-    //親スケルトンの全ボーンについて同名ノードをアニメシーンから探してサンプリング
+    const double startSec = startTime.GetSecondDouble();
+    const int frameCount = static_cast<int>(duration * EditorConst::kSampleFrameRate);
+
+    //スケルトンの全ボーンについて、同じ名前のノードを探してサンプリングする
     for (size_t b = 0; b < skeleton.GetBoneCount(); ++b)
     {
-        const auto& bone = skeleton.GetBone(b);
-        FbxNode* node = scene->FindNodeByName(bone.name_.c_str());
-        if (node)
+        FbxNode* node = scene->FindNodeByName(skeleton.GetBone(b).name_.c_str());
+        if (!node) continue;
+
+        BoneTrack* track = outClip.GetOrCreateTrack(static_cast<int>(b));
+
+        //一定間隔で姿勢を取り出す(最後は端数があっても終端ちょうどにする)
+        for (int f = 0; f <= frameCount; ++f)
         {
-            BoneTrack* track = outClip.GetOrCreateTrack(static_cast<int>(b));
-            track->boneIndex_ = static_cast<int>(b);
-            //１秒間に30回の等間隔で姿勢をベイクして取り出す
-            int frameCount = static_cast<int>(duration * EditorConst::kSampleFrameRate);
-            float dt = EditorConst::kFrameDuration;
+            const float t = (f == frameCount) ? duration : (f * EditorConst::kFrameDuration);
+            FbxTime fbxTime;
+            fbxTime.SetSecondDouble(startSec + t);
 
-            for (int f = 0; f <= frameCount; ++f)
-            {
-                float t = (f == frameCount) ? duration : (f * dt);
-                FbxTime fbxTime;
-                fbxTime.SetSecondDouble(startSec + t);
-                //全ボーン統一でローカル変換行列を評価
-                FbxAMatrix localMatrix = node->EvaluateLocalTransform(fbxTime);
+            //AnimStackを切り替えたあとに古い計算結果が使われないよう、毎回計算させる(最後の引数true)
+            const Transform pose = ToTransform(node->EvaluateLocalTransform(fbxTime, FbxNode::eSourcePivot, false, true));
 
-                FbxVector4 lT = localMatrix.GetT();
-                FbxQuaternion lQ = localMatrix.GetQ();
-                FbxVector4 lS = localMatrix.GetS();
-
-                XMFLOAT3 pos = { static_cast<float>(lT[0]), static_cast<float>(lT[1]), static_cast<float>(lT[2]) };
-                XMFLOAT4 rot = { static_cast<float>(lQ[0]), static_cast<float>(lQ[1]), static_cast<float>(lQ[2]), static_cast<float>(lQ[3]) };
-                XMFLOAT3 scl = { static_cast<float>(lS[0]), static_cast<float>(lS[1]), static_cast<float>(lS[2]) };
-
-                track->translationTrack_.AddKey(t, pos, InterpolationType::Linear);
-                track->rotationTrack_.AddKey(t, rot, InterpolationType::Linear);
-                track->scaleTrack_.AddKey(t, scl, InterpolationType::Linear);
-            }
+            track->translationTrack_.AddKey(t, pose.translation_);
+            track->rotationTrack_.AddKey(t, pose.rotation_);
+            track->scaleTrack_.AddKey(t, pose.scale_);
         }
     }
 
-    scene->Destroy();
     return !outClip.boneTracks_.empty();
 }
 
@@ -412,18 +490,9 @@ void FbxModelLoader::ProcessSkeletonHierarchy(FbxNode* node, int parentIndex, Sk
     {
         std::string boneName = node->GetName();
 
-        //０フレーム目のローカル変換行列を取得
-        FbxAMatrix localMatrix = node->EvaluateLocalTransform(0);
-
-        FbxVector4 lT = localMatrix.GetT();
-        FbxQuaternion lQ = localMatrix.GetQ();
-        FbxVector4 lS = localMatrix.GetS();
-
-        XMFLOAT3 pos = { static_cast<float>(lT[0]), static_cast<float>(lT[1]), static_cast<float>(lT[2]) };
-        XMFLOAT4 rot = { static_cast<float>(lQ[0]), static_cast<float>(lQ[1]), static_cast<float>(lQ[2]), static_cast<float>(lQ[3]) };
-        XMFLOAT3 scl = { static_cast<float>(lS[0]), static_cast<float>(lS[1]), static_cast<float>(lS[2]) };
-
-        Transform localBindPose(pos, rot, scl);
+        //アニメーションを含まない初期状態のローカル行列を、バインドポーズにする
+        //(フレーム0だと、モデルにアニメーションが入っているときに、その最初の姿勢になってしまう)
+        Transform localBindPose = ToTransform(node->EvaluateLocalTransform(FBXSDK_TIME_INFINITE));
         //自分のインデックスを取得し、子ノード探索時の親インデックスとして渡す
         currentBoneIndex = outSkeleton.AddBone(boneName, parentIndex, localBindPose);
     }

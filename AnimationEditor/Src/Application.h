@@ -63,7 +63,8 @@ private:
 	bool LoadParentModel(const std::string& filePath);
 	//今のモデルにアニメーションを追加する
 	void AddAnimation(const std::string& filePath);
-
+	//読み込んだクリップに名前を付けて追加し、最初の1本を選択する
+	void AddClips(std::vector<AnimationClip>&& clips, const std::string& filePath);
 	//---------- ポーズを計算し直すかの判定用 ----------
 	//前回ポーズを求めたときの条件。これが変わったら計算し直す
 	struct SampleInputs
