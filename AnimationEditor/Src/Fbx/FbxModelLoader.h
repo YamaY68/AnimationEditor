@@ -2,7 +2,8 @@
 #include<string>
 #include<vector>
 #include<fbxsdk.h>
-
+#include<unordered_set>
+#include<unordered_map>
 #if defined(_DEBUG)
 #pragma comment(lib, "libfbxsdk-mt.lib")
 #pragma comment(lib, "libxml2-mt.lib")
@@ -42,9 +43,16 @@ public:
 	//戻り値:読み込めたクリップの数
 	int LoadEmbeddedAnimations(const Skeleton& skeleton, std::vector<AnimationClip>& outClips);
 private:
-	//シーンノードを深さ優先操作してスケルトン階層を構築
-	void ProcessSkeletonHierarchy(FbxNode* node, int parentIndex, Skeleton& outSkeleton);
+	//ボーンとして扱うノードを集める
+	//(スケルトン属性のノード＋スキンが参照しているノード＋それらの祖先)
+	std::unordered_set<FbxNode*> CollectBoneNodes(FbxScene* scene)const;
 
+	//シーンノードを深さ優先操作してスケルトン階層を構築
+	void ProcessSkeletonHierarchy(FbxNode* node, int parentIndex,
+		const std::unordered_set<FbxNode*>& boneNodes, Skeleton& outSkeleton);
+
+	//ノードに一番近いボーン(自分自身か祖先)の番号を探す(無ければ-1)
+	int FindNearestBone(FbxNode* node)const;
 	//FBXファイルを開き、新しいシーンに読み込む(失敗したらnullptr)
 	FbxScene* ImportScene(const std::string& filePath, const char* sceneName);
 
@@ -57,4 +65,5 @@ private:
 	FbxManager* fbxManager_ = nullptr;	//FBX　SDK全体のメモリ、オブジェクト工場
 	FbxIOSettings* ioSetting_ = nullptr;	//読み込み時の設定
 	FbxScene* fbxScene_ = nullptr;	//現在開いている１体分のFBXシーンデータ全体
+	std::unordered_map<FbxNode*, int> nodeToBone_;	//ノード→ボーン番号(LoadSkeletonで作り、メッシュの読み込みで使う)
 };

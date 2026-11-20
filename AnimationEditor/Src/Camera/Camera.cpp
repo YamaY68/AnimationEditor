@@ -1,7 +1,20 @@
 #include "Camera.h"
 #include<cmath>
 #include<algorithm>
+namespace
+{
+	constexpr float kDefaultMinDistance = 1.0f;		//‹ß‚Ã‚¯‚éŒÀŠE(‰Šú’l)
+	constexpr float kDefaultMaxDistance = 1000.0f;	//—£‚ê‚ç‚ê‚éŒÀŠE(‰Šú’l)
+	constexpr float kDefaultNearClip = 1.0f;		//•`‰æ”ÍˆÍ‚Ìè‘O(‰Šú’l)
+	constexpr float kDefaultFarClip = 3000.0f;		//•`‰æ”ÍˆÍ‚Ì‰œ(‰Šú’l)
 
+	//Frame‚Åg‚¤Š„‡(‚·‚×‚Ä”¼Œa‚É‘Î‚·‚é”{—¦)
+	constexpr float kFrameDistanceRate = 2.5f;		//ƒJƒƒ‰‚Ì‹——£
+	constexpr float kFrameMinDistanceRate = 0.01f;	//‹ß‚Ã‚¯‚éŒÀŠE
+	constexpr float kFrameMaxDistanceRate = 20.0f;	//—£‚ê‚ç‚ê‚éŒÀŠE
+	constexpr float kFrameNearClipRate = 0.01f;		//•`‰æ”ÍˆÍ‚Ìè‘O
+	constexpr float kFrameFarClipRate = 50.0f;		//•`‰æ”ÍˆÍ‚Ì‰œ
+}
 Camera::Camera(void)
 	:
 	target_(VGet(0.0f, 10.0f, 0.0f)),
@@ -9,7 +22,11 @@ Camera::Camera(void)
 	yaw_(0.0f),
 	pitch_(0.0f),
 	prevMouseX_(0),
-	prevMouseY_(0)
+	prevMouseY_(0),
+	minDistance_(kDefaultMinDistance),
+	maxDistance_(kDefaultMaxDistance),
+	nearClip_(kDefaultNearClip),
+	farClip_(kDefaultFarClip)
 {
 }
 
@@ -29,7 +46,7 @@ void Camera::Update(bool UsingUI)
 		{
 			float zoomPow = 0.08f;
 			distance_ -= wheel * (distance_ * zoomPow);
-			distance_ = std::clamp(distance_, 1.0f, 1000.0f);
+			distance_ = std::clamp(distance_, minDistance_, maxDistance_);
 		}
 
 		int mouseInput = GetMouseInput();
@@ -73,4 +90,19 @@ void Camera::ApplyToDxLib(void) const
 
 	VECTOR up = VGet(0.0f, 1.0f, 0.0f);
 	SetCameraPositionAndTargetAndUpVec(eye, target_, up);
+	SetCameraNearFar(nearClip_, farClip_);
+}
+
+void Camera::Frame(const VECTOR& center, float radius)
+{
+	if (radius <= 0.0f) return;
+
+	target_ = center;
+	distance_ = radius * kFrameDistanceRate;
+	//‹ß‚Ã‚¯‚éE—£‚ê‚ç‚ê‚é”ÍˆÍ‚Æ•`‰æ”ÍˆÍ‚àAƒ‚ƒfƒ‹‚Ì‘å‚«‚³‚É‡‚í‚¹‚é
+	//(ŒÅ’è‚Ì‚Ü‚Ü‚¾‚ÆA‘å‚«‚¢ƒ‚ƒfƒ‹‚Í‰“‚­‚ªØ‚êA¬‚³‚¢ƒ‚ƒfƒ‹‚Í‹ß‚Ã‚¯‚È‚¢)
+	minDistance_ = radius * kFrameMinDistanceRate;
+	maxDistance_ = radius * kFrameMaxDistanceRate;
+	nearClip_ = radius * kFrameNearClipRate;
+	farClip_ = radius * kFrameFarClipRate;
 }

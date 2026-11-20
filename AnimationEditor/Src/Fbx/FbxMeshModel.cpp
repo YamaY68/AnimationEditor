@@ -48,6 +48,7 @@ void FbxMeshModel::UpdateSkinning(const Skeleton& skeleton, const std::vector<Di
 
 		XMVECTOR skinnedPos = XMVectorZero();
 		XMVECTOR skinnedNorm = XMVectorZero();
+		float totalWeight = 0.0f;	//実際にかかったウェイトの合計
 
 		//最大４ボーン分の影響度をブレンド
 		for (int k = 0; k < 4; ++k)
@@ -65,7 +66,16 @@ void FbxMeshModel::UpdateSkinning(const Skeleton& skeleton, const std::vector<Di
 				//ウェイトをかけて加算
 				skinnedPos = XMVectorAdd(skinnedPos, XMVectorScale(transformedPos, weight));
 				skinnedNorm = XMVectorAdd(skinnedNorm, XMVectorScale(transformNorm, weight));
+				totalWeight += weight;
 			}
+		}
+
+		//どのボーンの影響も受けていない頂点(ボーンの無い静止したメッシュなど)は、元の位置のままにする
+		//(そのままだと、位置が(0,0,0)に潰れてしまう)
+		if (totalWeight <= 0.0001f)
+		{
+			skinnedPos = srcPos;
+			skinnedNorm = srcNorm;
 		}
 
 
@@ -120,4 +130,20 @@ void FbxMeshModel::ReleaseTextures(void)
 			sub.textureHandle_ = -1;
 		}
 	}
+}
+bool FbxMeshModel::GetBindBounds(XMFLOAT3& outMin, XMFLOAT3& outMax) const
+{
+	if (sourceVertices_.empty()) return false;
+
+	XMVECTOR minV = XMLoadFloat3(&sourceVertices_[0].position_);
+	XMVECTOR maxV = minV;
+	for (const auto& v : sourceVertices_)
+	{
+		XMVECTOR p = XMLoadFloat3(&v.position_);
+		minV = XMVectorMin(minV, p);
+		maxV = XMVectorMax(maxV, p);
+	}
+	XMStoreFloat3(&outMin, minV);
+	XMStoreFloat3(&outMax, maxV);
+	return true;
 }

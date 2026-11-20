@@ -61,6 +61,8 @@ private:
 	void ProcessDroppedFiles(void);
 	//モデル(スケルトン＋メッシュ)を読み込む。失敗したら今のモデルはそのまま
 	bool LoadParentModel(const std::string& filePath);
+	//カメラをモデル全体が見える位置に合わせる
+	void FrameCameraToModel(void);
 	//今のモデルにアニメーションを追加する
 	void AddAnimation(const std::string& filePath);
 	//読み込んだクリップに名前を付けて追加し、最初の1本を選択する

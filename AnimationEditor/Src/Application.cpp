@@ -3,7 +3,7 @@
 #include<filesystem>
 #include<algorithm>
 #include<cctype>
-
+#include<cmath>
 namespace
 {
 	//---------- ウィンドウ ----------
@@ -349,6 +349,8 @@ bool Application::LoadParentModel(const std::string& filePath)
 
 	//モデルが替わったので、クリップ・選択・Undoなどをリセットする
 	state_.ResetForNewModel();
+	//モデルの大きさはモデルごとに違うので、カメラを合わせ直す
+	FrameCameraToModel();
 	//モデルのFBXにアニメーションが入っていれば、クリップとして追加する
 	std::vector<AnimationClip> embeddedClips;
 	if (loader_.LoadEmbeddedAnimations(skeleton_, embeddedClips) > 0)
@@ -362,7 +364,23 @@ bool Application::LoadParentModel(const std::string& filePath)
 	poseDirty_ = true;
 	return true;
 }
+void Application::FrameCameraToModel(void)
+{
+	DirectX::XMFLOAT3 minPos, maxPos;
+	if (!meshModel_.GetBindBounds(minPos, maxPos)) return;
 
+	//モデルを囲む箱の中心と、箱の対角線の半分(＝箱がすっぽり入る球の半径)
+	const VECTOR center = VGet(
+		(minPos.x + maxPos.x) * 0.5f,
+		(minPos.y + maxPos.y) * 0.5f,
+		(minPos.z + maxPos.z) * 0.5f);
+	const float dx = maxPos.x - minPos.x;
+	const float dy = maxPos.y - minPos.y;
+	const float dz = maxPos.z - minPos.z;
+	const float radius = std::sqrt(dx * dx + dy * dy + dz * dz) * 0.5f;
+
+	camera_.Frame(center, radius);
+}
 void Application::AddAnimation(const std::string& filePath)
 {
 	if (!skeletonLoaded_ || filePath.empty()) return;

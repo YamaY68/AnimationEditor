@@ -63,7 +63,8 @@ public:
 	void Draw(void)const;
 
 	void ReleaseTextures(void);
-
+	//バインドポーズでの頂点を囲む箱(最小・最大の座標)を求める(頂点が無ければfalse)
+	bool GetBindBounds(DirectX::XMFLOAT3& outMin, DirectX::XMFLOAT3& outMax)const;
 	std::vector<SkinVertex>sourceVertices_;	//変形前の元頂点
 	std::vector<SubMesh>subMeshes_;	//サブメッシュ
 private:
