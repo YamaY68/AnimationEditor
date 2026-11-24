@@ -28,8 +28,8 @@ namespace
 	//---------- ボーン表示 ----------
 	constexpr float kSelectedBoneRadius = 1.5f;	//選択中のボーンに描く球の半径
 	constexpr int kSelectedBoneDivisions = 12;	//その球の分割数
-
-	//---------- その他 ----------
+	constexpr float kBonePickRadiusPx = 12.0f;	//クリックで関節を選べる距離(画面上のピクセル)
+	constexpr float kBoneLinePickRadiusPx = 6.0f;	//クリックでラインを選べる距離(画面上のピクセル)	//---------- その他 ----------
 	//1フレームの経過時間(秒)。60fpsで動く前提の固定値
 	constexpr float kFixedDeltaTime = 1.0f / 60.0f;
 	const char* const kDefaultModelPath = "Data/DefaultModel1.fbx";
@@ -121,6 +121,7 @@ void Application::UpdateFrame(void)
 	if (skeletonLoaded_)
 	{
 		UpdatePose(keyEdited);
+		HandleBonePicking();
 	}
 	Render();
 
@@ -438,4 +439,24 @@ void Application::AddClips(std::vector<AnimationClip>&& clips, const std::string
 	state_.currentClipIndex = firstNewIndex;
 	state_.playback.time = 0.0f;
 	poseDirty_ = true;
+}
+
+
+void Application::HandleBonePicking(void)
+{
+	//ボーンを表示していない・UIを操作している・クリックしていないときは何もしない
+	if (!showBones_) return;
+	if (imguiManager_.WantCaptureMouse()) return;
+	if (!ImGui::IsMouseClicked(ImGuiMouseButton_Left)) return;
+
+	int mouseX, mouseY;
+	GetMousePoint(&mouseX, &mouseY);
+	const int picked = BonePicker::Pick(skeleton_, worldMatrices_,
+		static_cast<float>(mouseX), static_cast<float>(mouseY),
+		kBonePickRadiusPx, kBoneLinePickRadiusPx);
+	//近くにボーンがあったときだけ選択を変える(何もない所のクリックでは選択を外さない)
+	if (picked >= 0)
+	{
+		state_.selectedBoneIndex = picked;
+	}
 }

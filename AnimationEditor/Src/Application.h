@@ -16,6 +16,8 @@
 #include "UI/TimeLineView.h"
 #include "UI/InspectorView.h"
 
+#include "Viewport/BonePicker.h"
+
 /// <summary>
 /// アプリケーション全体
 /// 1フレームの流れ:入力 → UI → ポーズの更新 → 描画
@@ -40,6 +42,8 @@ private:
 	void UpdateFrame(void);
 	//ショートカットキー(Undo/Redo、ボーン表示の切り替え)
 	void HandleShortcuts(void);
+	//ビューポートの左クリックで、ボーンを選択する
+	void HandleBonePicking(void);	
 	//UI(メニュー・タイムライン・インスペクター)を描画し、操作を反映する
 	//戻り値:キーが変更されたか(ポーズを計算し直す必要があるか)
 	bool UpdateUI(float deltaTime);

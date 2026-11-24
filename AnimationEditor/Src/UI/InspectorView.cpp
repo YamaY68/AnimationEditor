@@ -17,6 +17,18 @@ namespace
 
 	//補間方法の選択肢(InterpolationTypeと同じ順番に並べる)
 	const char* const kInterpNames[] = { "Linear", "Step", "EaseIn", "EaseOut", "EaseInOut" };
+
+	//ancestorがboneの祖先(親・親の親…)か
+	bool IsAncestorOf(int ancestor, int bone, const Skeleton& skeleton)
+	{
+		int p = skeleton.GetBone(bone).parentIndex_;
+		while (p >= 0)
+		{
+			if (p == ancestor) return true;
+			p = skeleton.GetBone(p).parentIndex_;
+		}
+		return false;
+	}
 }
 
 InspectorResult InspectorView::Draw(const Skeleton& skeleton, Pose& inOutPose, EditorState& state)
@@ -86,6 +98,9 @@ void InspectorView::DrawBoneHierarchy(const Skeleton& skeleton, EditorState& sta
 	ImGui::Text("Skeleton Hierarchy(%zu bones)", skeleton.GetBoneCount());
 	ImGui::Separator();
 
+	//ツリー以外(ビューポートなど)で選択が変わったら、そのボーンまで開いてスクロールする
+	revealBone_ = (state.selectedBoneIndex != lastSelectedBone_) ? state.selectedBoneIndex : -1;
+
 	//親がいないボーン(ルート)から、子をたどってツリーを表示する
 	for (size_t i = 0; i < skeleton.GetBoneCount(); ++i)
 	{
@@ -94,6 +109,9 @@ void InspectorView::DrawBoneHierarchy(const Skeleton& skeleton, EditorState& sta
 			DrawBoneNode(static_cast<int>(i), skeleton, state);
 		}
 	}
+
+	//ツリーのクリックで選んだときは、次のフレームでスクロールしないように今の選択を覚えておく
+	lastSelectedBone_ = state.selectedBoneIndex;
 	ImGui::EndChild();
 	ImGui::Separator();
 }
@@ -121,10 +139,22 @@ void InspectorView::DrawBoneNode(int boneIndex, const Skeleton& skeleton, Editor
 		flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
 	}
 
+	//選択中のボーンの祖先なら、ノードを開く
+	if (revealBone_ >= 0 && IsAncestorOf(boneIndex, revealBone_, skeleton))
+	{
+		ImGui::SetNextItemOpen(true);
+	}
+
 	//ボーン番号をImGuiのIDにする(同じ名前のボーンがあってもIDが重ならないように)
 	const bool nodeOpen = ImGui::TreeNodeEx(
 		reinterpret_cast<void*>(static_cast<intptr_t>(boneIndex)),
 		flags, "%s", skeleton.GetBone(boneIndex).name_.c_str());
+
+	//選択中のボーンなら、ツリーの真ん中に来るようにスクロールする
+	if (boneIndex == revealBone_)
+	{
+		ImGui::SetScrollHereY(0.5f);
+	}
 
 	if (ImGui::IsItemClicked())
 	{

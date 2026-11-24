@@ -61,6 +61,10 @@ private:
 	//---------- オートキー ----------
 	bool editRecorded_ = false;		//今のドラッグで、Undoの履歴をもう積んだか
 
+	//---------- ヒエラルキーの自動展開 ----------
+	int lastSelectedBone_ = -1;	//前のフレームでツリーが表示していた選択中のボーン
+	int revealBone_ = -1;		//このフレームで開いてスクロールするボーン(-1:しない)
+
 	//---------- 回転の表示 ----------
 	DirectX::XMFLOAT3 eulerCache_ = { 0.0f, 0.0f, 0.0f };			//表示中のオイラー角(度)
 	DirectX::XMFLOAT4 eulerCacheQuat_ = { 0.0f, 0.0f, 0.0f, 1.0f };	//そのオイラー角から作ったクォータニオン

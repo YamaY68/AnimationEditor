@@ -133,6 +133,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="Src\Viewport\BonePicker.cpp" />
     <ClCompile Include="Library\ImGui\imgui.cpp" />
     <ClCompile Include="Library\ImGui\imgui_demo.cpp" />
     <ClCompile Include="Library\ImGui\imgui_draw.cpp" />
@@ -155,6 +156,7 @@
     <ClCompile Include="Src\Edit\UndoStack.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Src\Viewport\BonePicker.h" />
     <ClInclude Include="Library\ImGui\imconfig.h" />
     <ClInclude Include="Library\ImGui\imgui.h" />
     <ClInclude Include="Library\ImGui\imgui_impl_dx11.h" />
