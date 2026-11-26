@@ -24,10 +24,20 @@ namespace TwoBoneIK
 	/// <param name="inOutPose">姿勢(根元・中間・先端の回転が書き換わる)</param>
 	/// <param name="outRootBone">書き換えた根元のボーン</param>
 	/// <param name="outMidBone">書き換えた中間のボーン</param>
+	/// <param name="polePosition">ポールベクトルの目標(ワールド)。ひざ・ひじがこの点の方へ曲がる。nullptrなら今の曲がる向きのまま</param>
 	/// <returns>解けたか(チェーンが作れないときなどはfalse)</returns>
 	bool Solve(const Skeleton& skeleton, const std::vector<DirectX::XMFLOAT4X4>& worldMatrices,
 		int endBone, const DirectX::XMFLOAT3& targetPosition, const DirectX::XMFLOAT4& targetRotation,
-		Pose& inOutPose, int& outRootBone, int& outMidBone);
+		Pose& inOutPose, int& outRootBone, int& outMidBone,
+		const DirectX::XMFLOAT3* polePosition = nullptr);
+
+	/// <summary>
+	/// 今の姿勢から、ポールベクトルの目標の初期位置を求める
+	/// (中間の関節から、今曲がっている方向へ少し離した点)
+	/// </summary>
+	/// <returns>求められたか(チェーンが作れないときはfalse)</returns>
+	bool ComputeDefaultPole(const Skeleton& skeleton, const std::vector<DirectX::XMFLOAT4X4>& worldMatrices,
+		int endBone, DirectX::XMFLOAT3& outPolePosition);
 	/// <summary>
 /// 先端のボーンからIKのチェーン(先端 → 中間(親) → 根元(親の親))を探す
 /// 根元と中間は、子が1本だけのボーンに限る

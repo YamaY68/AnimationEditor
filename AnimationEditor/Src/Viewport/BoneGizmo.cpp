@@ -38,7 +38,7 @@ namespace
 }
 
 std::vector<int> BoneGizmo::Draw(const Skeleton& skeleton, const std::vector<XMFLOAT4X4>& worldMatrices,
-	Pose& inOutPose, int boneIndex)
+	Pose& inOutPose, int boneIndex, const XMFLOAT3* pinnedPole)
 {
 	std::vector<int> editedBones;
 
@@ -82,25 +82,43 @@ std::vector<int> BoneGizmo::Draw(const Skeleton& skeleton, const std::vector<XMF
 
 	XMFLOAT4X4 world = worldMatrices[boneIndex];
 
-	//IKは、自分で持っている目標の位置と向きでギズモを出す
-	//(ドラッグしていない間は、先端のボーンに合わせ直す)
+	//IKは、自分で持っている目標の位置と向き・ポールの位置でギズモを出す
+	//(ドラッグしていない間は、今の姿勢に合わせ直す。ドラッグ中は動かした値を使い続ける)
 	if (operation_ == Operation::IK)
 	{
 		if (!ImGuizmo::IsUsing())
 		{
 			ikTargetPosition_ = { world._41, world._42, world._43 };
 			ikTargetRotation_ = GetRotation(world);
+			if (pinnedPole != nullptr)
+			{
+				ikPolePosition_ = *pinnedPole;
+			}
+			else
+			{
+				TwoBoneIK::ComputeDefaultPole(skeleton, worldMatrices, boneIndex, ikPolePosition_);
+			}
 		}
-		const XMMATRIX target = XMMatrixRotationQuaternion(XMLoadFloat4(&ikTargetRotation_))
-			* XMMatrixTranslation(ikTargetPosition_.x, ikTargetPosition_.y, ikTargetPosition_.z);
+
+		XMMATRIX target;
+		if (ikMode_ == IKMode::Pole)
+		{
+			//ポールは位置だけ
+			target = XMMatrixTranslation(ikPolePosition_.x, ikPolePosition_.y, ikPolePosition_.z);
+		}
+		else
+		{
+			target = XMMatrixRotationQuaternion(XMLoadFloat4(&ikTargetRotation_))
+				* XMMatrixTranslation(ikTargetPosition_.x, ikTargetPosition_.y, ikTargetPosition_.z);
+		}
 		XMStoreFloat4x4(&world, target);
 	}
 
 	//今のモードをImGuizmoの種類に変換する
-	const bool rotating = (operation_ == Operation::Rotate) || (operation_ == Operation::IK && ikRotate_);
+	const bool rotating = (operation_ == Operation::Rotate) || (operation_ == Operation::IK && ikMode_ == IKMode::Rotate);
 	const ImGuizmo::OPERATION op = rotating ? ImGuizmo::ROTATE : ImGuizmo::TRANSLATE;
-	//IKの移動は、ワールドの軸で動かす(それ以外は設定に従う)
-	const bool ikMove = (operation_ == Operation::IK && !ikRotate_);
+	//IKの移動とポールは、ワールドの軸で動かす(それ以外は設定に従う)
+	const bool ikMove = (operation_ == Operation::IK && ikMode_ != IKMode::Rotate);
 	const bool useLocal = (space_ == Space::Local) && !ikMove;
 	const ImGuizmo::MODE mode = useLocal ? ImGuizmo::LOCAL : ImGuizmo::WORLD;
 
@@ -135,15 +153,22 @@ std::vector<int> BoneGizmo::Draw(const Skeleton& skeleton, const std::vector<XMF
 	}
 	case Operation::IK:
 	{
-		//目標の位置と向きを更新し、先端が届くように解き直す
-		//(IK移動では向きは変わらず、IK回転では位置は変わらない)
-		ikTargetPosition_ = { world._41, world._42, world._43 };
-		ikTargetRotation_ = GetRotation(world);
+		//動かしたもの(目標の位置・向き、またはポールの位置)を更新し、解き直す
+		//(IK移動では向きは変わらず、IK回転では位置は変わらない。ポールでは先端はその場のまま)
+		if (ikMode_ == IKMode::Pole)
+		{
+			ikPolePosition_ = { world._41, world._42, world._43 };
+		}
+		else
+		{
+			ikTargetPosition_ = { world._41, world._42, world._43 };
+			ikTargetRotation_ = GetRotation(world);
+		}
 
 		int rootBone = -1;
 		int midBone = -1;
 		if (TwoBoneIK::Solve(skeleton, worldMatrices, boneIndex,
-			ikTargetPosition_, ikTargetRotation_, inOutPose, rootBone, midBone))
+			ikTargetPosition_, ikTargetRotation_, inOutPose, rootBone, midBone, &ikPolePosition_))
 		{
 			editedBones.push_back(rootBone);
 			editedBones.push_back(midBone);
@@ -160,7 +185,7 @@ void BoneGizmo::SetOperation(Operation op)
 	//IKに入るときは、位置を動かすところから始める
 	if (op == Operation::IK && operation_ != Operation::IK)
 	{
-		ikRotate_ = false;
+		ikMode_ = IKMode::Move;
 	}
 	operation_ = op;
 }
@@ -171,7 +196,14 @@ void BoneGizmo::ToggleOperation(void)
 	{
 	case Operation::Translate: operation_ = Operation::Rotate;    break;
 	case Operation::Rotate:    operation_ = Operation::Translate; break;
-	case Operation::IK:        ikRotate_ = !ikRotate_;            break;	//IKの中で移動と回転を切り替える
+	case Operation::IK:	//IKの中で 移動 → 回転 → ポール と切り替える
+		switch (ikMode_)
+		{
+		case IKMode::Move:   ikMode_ = IKMode::Rotate; break;
+		case IKMode::Rotate: ikMode_ = IKMode::Pole;   break;
+		case IKMode::Pole:   ikMode_ = IKMode::Move;   break;
+		}
+		break;
 	}
 }
 
@@ -189,7 +221,15 @@ void BoneGizmo::DrawStatus(void) const
 {
 	const char* opName = "Move";
 	if (operation_ == Operation::Rotate) opName = "Rotate";
-	if (operation_ == Operation::IK)     opName = ikRotate_ ? "IK Rotate" : "IK Move";
+	if (operation_ == Operation::IK)
+	{
+		switch (ikMode_)
+		{
+		case IKMode::Move:   opName = "IK Move";   break;
+		case IKMode::Rotate: opName = "IK Rotate"; break;
+		case IKMode::Pole:   opName = "IK Pole";   break;
+		}
+	}
 	const char* spaceName = (space_ == Space::Local) ? "Local" : "World";
 
 	char text[192];

@@ -32,7 +32,8 @@ namespace
 	constexpr float kBoneLinePickRadiusPx = 6.0f;	//クリックでラインを選べる距離(画面上のピクセル)	//---------- その他 ----------
 	constexpr float kJointRadius = 0.6f;	//関節の球の半径
 	constexpr float kBoneRadius = 0.3f;		//ボーンの太さ(カプセルの半径)
-	constexpr float kPinRadius = 1.0f;	//ピンの位置に描く球の半径
+	constexpr float kPinRadius = 2.0f;	//ピンの位置に描く球の半径
+	constexpr float kPoleRadius = 2.2f;	//ポールの目標の位置に描く球の半径
 	//1フレームの経過時間(秒)。60fpsで動く前提の固定値
 	constexpr float kFixedDeltaTime = 1.0f / 60.0f;
 	const char* const kDefaultModelPath = "Data/DefaultModel1.fbx";
@@ -154,14 +155,9 @@ void Application::HandleShortcuts(void)
 	{
 		if (ImGui::IsKeyPressed(ImGuiKey_W, false)) boneGizmo_.SetOperation(BoneGizmo::Operation::Translate);
 		if (ImGui::IsKeyPressed(ImGuiKey_E, false)) boneGizmo_.SetOperation(BoneGizmo::Operation::Rotate);
+		if (ImGui::IsKeyPressed(ImGuiKey_I, false)) boneGizmo_.SetOperation(BoneGizmo::Operation::IK);
 		if (ImGui::IsKeyPressed(ImGuiKey_X, false)) boneGizmo_.ToggleSpace();
 	}
-
-	if (ImGui::IsKeyPressed(ImGuiKey_W, false)) boneGizmo_.SetOperation(BoneGizmo::Operation::Translate);
-	if (ImGui::IsKeyPressed(ImGuiKey_E, false)) boneGizmo_.SetOperation(BoneGizmo::Operation::Rotate);
-	if (ImGui::IsKeyPressed(ImGuiKey_I, false)) boneGizmo_.SetOperation(BoneGizmo::Operation::IK);
-	if (ImGui::IsKeyPressed(ImGuiKey_X, false)) boneGizmo_.ToggleSpace();
-
 	//P:選択中の先端ボーンをピン留め・解除(IKのチェーンが作れるボーンだけ)
 	if (!io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_P, false))
 	{
@@ -221,7 +217,10 @@ bool Application::UpdateUI(float deltaTime)
 	//ギズモ(ボーン表示中だけ、選択中のボーンに出す)
 	//IKのときは、根元・中間・先端の3本が書き換わる
 	const int gizmoBone = showBones_ ? state_.selectedBoneIndex : -1;
-	const std::vector<int> gizmoEdited = boneGizmo_.Draw(skeleton_, worldMatrices_, finalPose_, gizmoBone);
+	//ピンにポールが固定されていれば、ギズモもその位置を使う
+	const IKPin* gizmoPin = ikPins_.Find(gizmoBone);
+	const DirectX::XMFLOAT3* pinnedPole = (gizmoPin != nullptr && gizmoPin->hasPole) ? &gizmoPin->polePosition : nullptr;
+	const std::vector<int> gizmoEdited = boneGizmo_.Draw(skeleton_, worldMatrices_, finalPose_, gizmoBone, pinnedPole);
 	for (int bone : gizmoEdited)
 	{
 		poseEdited = true;
@@ -231,12 +230,19 @@ bool Application::UpdateUI(float deltaTime)
 		}
 	}
 
-	//ピン留めした先端をIKで動かしたら、ピンもそこへ移す
+	//ピン留めした先端をIKで動かしたら、ピンもそこへ移す(ポールを動かしたら、ピンにポールを持たせる)
 	if (!gizmoEdited.empty()
 		&& boneGizmo_.GetOperation() == BoneGizmo::Operation::IK
 		&& ikPins_.Has(gizmoBone))
 	{
-		ikPins_.Set(gizmoBone, boneGizmo_.GetIKTargetPosition(), boneGizmo_.GetIKTargetRotation());
+		if (boneGizmo_.GetIKMode() == BoneGizmo::IKMode::Pole)
+		{
+			ikPins_.SetPole(gizmoBone, boneGizmo_.GetIKPolePosition());
+		}
+		else
+		{
+			ikPins_.Set(gizmoBone, boneGizmo_.GetIKTargetPosition(), boneGizmo_.GetIKTargetRotation());
+		}
 	}
 
 	//姿勢をいじったら、ピン留めした先端がその場に残るように解き直す
@@ -403,12 +409,24 @@ void Application::DrawBones(void) const
 		DrawSphere3D(GetPosition(worldMatrices_[selected]), kSelectedBoneRadius, kSelectedBoneDivisions,
 			style.selectedColor, style.selectedColor, TRUE);
 	}
-	//ピンの位置に紫の球を描く
+	//ピンの位置に球を描く
 	const unsigned int pinColor = GetColor(200, 80, 255);
 	for (const IKPin& pin : ikPins_.GetPins())
 	{
 		const VECTOR pos = VGet(pin.position.x, pin.position.y, pin.position.z);
 		DrawSphere3D(pos, kPinRadius, kSelectedBoneDivisions, pinColor, pinColor, TRUE);
+	}
+
+	//IKモード中は、ひざ・ひじからポールの目標へ線を引き、目標に緑の球を描く
+	int rootBone = -1;
+	int midBone = -1;
+	if (boneGizmo_.IsIKActive() && TwoBoneIK::FindChain(skeleton_, selected, rootBone, midBone))
+	{
+		const unsigned int poleColor = GetColor(80, 255, 120);
+		const DirectX::XMFLOAT3& pole = boneGizmo_.GetIKPolePosition();
+		const VECTOR polePos = VGet(pole.x, pole.y, pole.z);
+		DrawLine3D(GetPosition(worldMatrices_[midBone]), polePos, poleColor);
+		DrawSphere3D(polePos, kPoleRadius, kSelectedBoneDivisions, poleColor, poleColor, TRUE);
 	}
 
 	SetUseLighting(TRUE);

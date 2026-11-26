@@ -55,6 +55,28 @@ void IKPinSet::Set(int endBone, const XMFLOAT3& position, const XMFLOAT4& rotati
 	}
 }
 
+void IKPinSet::SetPole(int endBone, const XMFLOAT3& polePosition)
+{
+	for (IKPin& pin : pins_)
+	{
+		if (pin.endBone == endBone)
+		{
+			pin.hasPole = true;
+			pin.polePosition = polePosition;
+			return;
+		}
+	}
+}
+
+const IKPin* IKPinSet::Find(int endBone) const
+{
+	for (const IKPin& pin : pins_)
+	{
+		if (pin.endBone == endBone) return &pin;
+	}
+	return nullptr;
+}
+
 std::vector<int> IKPinSet::Apply(const Skeleton& skeleton, Pose& inOutPose) const
 {
 	std::vector<int> editedBones;
@@ -68,7 +90,8 @@ std::vector<int> IKPinSet::Apply(const Skeleton& skeleton, Pose& inOutPose) cons
 		int rootBone = -1;
 		int midBone = -1;
 		if (TwoBoneIK::Solve(skeleton, worldMatrices, pin.endBone,
-			pin.position, pin.rotation, inOutPose, rootBone, midBone))
+			pin.position, pin.rotation, inOutPose, rootBone, midBone,
+			pin.hasPole ? &pin.polePosition : nullptr))
 		{
 			editedBones.push_back(rootBone);
 			editedBones.push_back(midBone);

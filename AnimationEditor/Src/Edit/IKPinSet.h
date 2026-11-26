@@ -12,6 +12,8 @@ struct IKPin
 	int endBone = -1;									//固定する先端のボーン
 	DirectX::XMFLOAT3 position = { 0.0f, 0.0f, 0.0f };	//固定する位置(ワールド)
 	DirectX::XMFLOAT4 rotation = { 0.0f, 0.0f, 0.0f, 1.0f };	//固定する向き(ワールド)
+	bool hasPole = false;									//ポール(ひざ・ひじの向き)を固定しているか
+	DirectX::XMFLOAT3 polePosition = { 0.0f, 0.0f, 0.0f };	//ポールの目標の位置(ワールド)
 };
 
 /// <summary>
@@ -28,6 +30,10 @@ public:
 	bool Toggle(int endBone, const std::vector<DirectX::XMFLOAT4X4>& worldMatrices);
 	//ピンの位置と向きを書き換える(ピン留めした先端をIKで動かしたとき)
 	void Set(int endBone, const DirectX::XMFLOAT3& position, const DirectX::XMFLOAT4& rotation);
+	//ピンにポールの位置を持たせる(ピン留めした先端のポールを動かしたとき)
+	void SetPole(int endBone, const DirectX::XMFLOAT3& polePosition);
+	//そのボーンのピン(無ければnullptr)
+	const IKPin* Find(int endBone)const;
 	//すべてのピンを外す
 	void Clear(void) { pins_.clear(); }
 	bool IsEmpty(void)const { return pins_.empty(); }
