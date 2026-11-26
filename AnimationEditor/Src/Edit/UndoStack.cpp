@@ -1,9 +1,23 @@
 #include "UndoStack.h"
 #include<utility>
 
-void UndoStack::Record(int clipIndex, const AnimationClip& clip)
+UndoStack::Snapshot UndoStack::MakeSnapshot(int clipIndex, const AnimationClip& clip, bool includeBase)
 {
-	undo_.push_back({ clipIndex, clip.offsetTracks_ });
+	Snapshot snap;
+	snap.clipIndex = clipIndex;
+	snap.offsetTracks = clip.offsetTracks_;
+	snap.hasBase = includeBase;
+	if (includeBase)
+	{
+		snap.boneTracks = clip.boneTracks_;
+		snap.duration = clip.duration_;
+	}
+	return snap;
+}
+
+void UndoStack::Record(int clipIndex, const AnimationClip& clip, bool includeBase)
+{
+	undo_.push_back(MakeSnapshot(clipIndex, clip, includeBase));
 	//ãŒÀ‚ğ’´‚¦‚½‚çˆê”ÔŒÃ‚¢—š—ğ‚ğÌ‚Ä‚é
 	if (undo_.size() > kMaxHistory)
 	{
@@ -38,9 +52,14 @@ bool UndoStack::Restore(std::vector<Snapshot>& from, std::vector<Snapshot>& to,
 		}
 
 		AnimationClip& clip = clips[snap.clipIndex];
-		//¡‚Ìó‘Ô‚ğ”½‘Î‘¤‚Ì—š—ğ‚ÖÏ‚ñ‚Å‚©‚ç•œŒ³
-		to.push_back({ snap.clipIndex, clip.offsetTracks_ });
+		//¡‚Ìó‘Ô‚ğ”½‘Î‘¤‚Ì—š—ğ‚ÖÏ‚ñ‚Å‚©‚ç•œŒ³(Œ³‚Ì“®‚«‚à•Û‘¶‚µ‚Ä‚¢‚½—š—ğ‚È‚çAŒ³‚Ì“®‚«‚àÏ‚Ş)
+		to.push_back(MakeSnapshot(snap.clipIndex, clip, snap.hasBase));
 		clip.offsetTracks_ = std::move(snap.offsetTracks);
+		if (snap.hasBase)
+		{
+			clip.boneTracks_ = std::move(snap.boneTracks);
+			clip.duration_ = snap.duration;
+		}
 
 		outClipIndex = snap.clipIndex;
 		return true;

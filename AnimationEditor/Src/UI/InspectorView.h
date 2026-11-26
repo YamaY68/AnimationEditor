@@ -46,6 +46,9 @@ private:
 	void DrawRangeReplace(const Transform& trs, int boneIndex, const Skeleton& skeleton,
 		AnimationClip& clip, EditorState& state, InspectorResult& result);
 
+	//ベジェ曲線の編集欄(グラフ・プリセット・数値)
+	void DrawBezierEditor(int boneIndex, float time, AnimationClip& clip, EditorState& state, InspectorResult& result);
+
 	//姿勢をいじったときの共通処理(オートキーがONならキーを打つ)
 	void OnPoseChanged(const Transform& trs, int boneIndex, const Skeleton& skeleton,
 		EditorState& state, InspectorResult& result);

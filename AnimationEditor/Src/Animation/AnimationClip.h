@@ -60,9 +60,19 @@ public:
 	bool GetOffsetInterpolation(int boneIndex, float time, InterpolationType& out)const;
 	//修正分のキーの補間方法を設定する
 	void SetOffsetInterpolation(int boneIndex, float time, InterpolationType type);
-
+	//修正分のキーのベジェ曲線を取得する(キーが無ければfalse)
+	bool GetOffsetBezier(int boneIndex, float time, BezierHandles& out)const;
+	//修正分のキーのベジェ曲線を設定する
+	void SetOffsetBezier(int boneIndex, float time, const BezierHandles& bezier);
 	//---------- 元の動きと修正分の計算 ----------
 
+		//---------- 速度の変更 ----------
+
+	/// <param name="speed">区間全体の平均の倍率(区間の長さが 元の長さ/speed になる)</param>
+	/// <param name="curve">区間の中の緩急(横:新しい時間 縦:元の動きの進み具合)。nullptrなら一定の速さ
+	/// 時間が戻らないよう、制御点のyは0～1に収める</param>
+	/// <returns>変更したか(区間が短すぎる・倍率が0以下などはfalse)</returns>
+	bool ChangeRangeSpeed(float startTime, float endTime, float speed, const BezierHandles* curve = nullptr);
 	//元の動き＋修正分
 	static Transform Combine(const Transform& base, const Transform& offset);
 	//目標の姿勢－元の動き(＝修正分)。Combine(base, Difference(base, target)) == target になる

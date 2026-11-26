@@ -28,6 +28,19 @@ private:
 	/// <returns>キーを変更したか</returns>
 	bool DrawSeekBar(EditorState& state, AnimationClip& clip, const std::vector<float>& keyTimes);
 
+	/// <summary>
+	/// 区間の速度変更(In点・Out点・倍率を決めて、元の動きごと速さを変える)
+	/// </summary>
+	/// <returns>変更したか(ポーズを計算し直す必要があるか)</returns>
+	bool DrawSpeedRangeControls(EditorState& state, AnimationClip& clip);
+
+	//---------- 区間の速度変更 ----------
+	float speedRangeIn_ = -1.0f;	//In点の時刻(-1:未設定。未設定ならクリップの先頭)
+	float speedRangeOut_ = -1.0f;	//Out点の時刻(-1:未設定。未設定ならクリップの終端)
+	float rangeSpeed_ = 0.5f;		//区間の速度の倍率
+	bool useSpeedCurve_ = false;	//区間の中の緩急をベジェ曲線で付けるか
+	BezierHandles speedCurve_ = { 0.42f, 0.0f, 0.58f, 1.0f };	//区間の中の緩急(横:新しい時間 縦:元の動きの進み具合)
+	int speedRangeClip_ = -1;		//区間を決めたクリップ(クリップが替わったら区間を消す)
 	//キーのドラッグの状態
 	struct KeyDrag
 	{

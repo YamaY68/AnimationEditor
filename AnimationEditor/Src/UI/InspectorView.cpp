@@ -5,6 +5,7 @@
 #include"../Common/EditorConstants.h"
 #include"../Common/RotationUtil.h"
 #include"../Edit/PoseEdit.h"
+#include"BezierCurveWidget.h"
 namespace
 {
 	//表示中のオイラー角を使い続けるかの判定で、この内積以上なら「回転は外から変わっていない」とみなす
@@ -16,8 +17,27 @@ namespace
 	constexpr ImVec4 kReadyColor(0.4f, 1.0f, 0.4f, 1.0f);	//In点が記録済みのときの文字色
 
 	//補間方法の選択肢(InterpolationTypeと同じ順番に並べる)
-	const char* const kInterpNames[] = { "Linear", "Step", "EaseIn", "EaseOut", "EaseInOut" };
+	const char* const kInterpNames[] = { "Linear", "Step", "EaseIn", "EaseOut", "EaseInOut", "Bezier" };
 
+	//---------- ベジェ曲線の編集欄 ----------
+	constexpr float kBezierGraphHeight = 150.0f;	//グラフの高さ
+	constexpr float kBezierHandleRadius = 5.0f;		//制御点の丸の半径
+	constexpr float kBezierGrabRadius = 10.0f;		//制御点をつかめる距離(ピクセル)
+	constexpr int kBezierCurveSegments = 40;		//曲線を描くときの分割数
+
+	//ベジェ補間のグラフに表示する値の範囲(行き過ぎて戻る動きも作れるように、0～1より広くする)
+	constexpr float kBezierValueMin = -0.5f;
+	constexpr float kBezierValueMax = 1.5f;
+
+	//よく使う曲線
+	const BezierCurveWidget::Preset kBezierPresets[] = {
+		{ "Ease",      { 0.25f, 0.1f,  0.25f, 1.0f } },
+		{ "In",        { 0.42f, 0.0f,  1.0f,  1.0f } },
+		{ "Out",       { 0.0f,  0.0f,  0.58f, 1.0f } },
+		{ "InOut",     { 0.42f, 0.0f,  0.58f, 1.0f } },
+		{ "Overshoot", { 0.34f, 1.56f, 0.64f, 1.0f } },
+		{ "Anticipate",{ 0.36f, -0.6f, 0.7f,  1.0f } },
+	};
 	//ancestorがboneの祖先(親・親の親…)か
 	bool IsAncestorOf(int ancestor, int bone, const Skeleton& skeleton)
 	{
@@ -28,6 +48,27 @@ namespace
 			p = skeleton.GetBone(p).parentIndex_;
 		}
 		return false;
+	}
+}
+void InspectorView::DrawBezierEditor(int boneIndex, float time, AnimationClip& clip, EditorState& state, InspectorResult& result)
+{
+	BezierHandles h;
+	if (!clip.GetOffsetBezier(boneIndex, time, h)) return;
+
+	BezierCurveWidget::Options options;
+	options.valueMin = kBezierValueMin;
+	options.valueMax = kBezierValueMax;
+	options.presets = kBezierPresets;
+	options.presetCount = IM_ARRAYSIZE(kBezierPresets);
+
+	bool editStarted = false;
+	const bool changed = BezierCurveWidget::Draw("##InterpCurve", h, options, editStarted);
+	//ドラッグ1回・プリセット1回につき、Undoの履歴を1つ積む(書き換える前に積む)
+	if (editStarted) state.RecordUndo();
+	if (changed)
+	{
+		clip.SetOffsetBezier(boneIndex, time, h);
+		result.keyEdited = true;
 	}
 }
 
@@ -281,6 +322,12 @@ void InspectorView::DrawKeyControls(const Transform& trs, int boneIndex, const S
 			state.RecordUndo();
 			clip.SetOffsetInterpolation(boneIndex, time, static_cast<InterpolationType>(current));
 			result.keyEdited = true;
+		}
+
+		//ベジェのときは曲線の編集欄を出す
+		if (static_cast<InterpolationType>(current) == InterpolationType::Bezier)
+		{
+			DrawBezierEditor(boneIndex, time, clip, state, result);
 		}
 	}
 	else

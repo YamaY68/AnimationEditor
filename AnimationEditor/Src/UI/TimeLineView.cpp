@@ -5,6 +5,7 @@
 #include<algorithm>
 #include<iterator>
 #include<string>
+#include"BezierCurveWidget.h"
 #include"../Common/EditorConstants.h"
 
 namespace
@@ -19,6 +20,20 @@ namespace
 	constexpr ImU32 kMarkerOutlineColor = IM_COL32(0, 0, 0, 255);		//キーマーカーの縁の色
 	constexpr float kMinSpeed = -2.0f;							//再生速度の最小(マイナスは逆再生)
 	constexpr float kMaxSpeed = 3.0f;							//再生速度の最大
+	constexpr float kMinRangeSpeed = 0.1f;						//区間の速度変更の倍率の最小
+	constexpr float kMaxRangeSpeed = 4.0f;						//区間の速度変更の倍率の最大
+	constexpr ImU32 kSpeedRangeColor = IM_COL32(80, 160, 255, 70);	//シークバーに描く速度変更の区間の色
+
+	constexpr float kSpeedCurvePopupWidth = 260.0f;					//速度の曲線を編集するポップアップの幅
+
+	//速度の緩急のよく使う曲線(傾きが急なところは速く、平らなところはゆっくり)
+	const BezierCurveWidget::Preset kSpeedCurvePresets[] = {
+		{ "Linear",     { 1.0f / 3.0f, 1.0f / 3.0f, 2.0f / 3.0f, 2.0f / 3.0f } },	//一定の速さ
+		{ "SpeedUp",    { 0.42f, 0.0f, 1.0f, 1.0f } },		//だんだん速く
+		{ "SlowDown",   { 0.0f, 0.0f, 0.58f, 1.0f } },		//だんだん遅く
+		{ "Smooth",     { 0.42f, 0.0f, 0.58f, 1.0f } },		//遅い→速い→遅い
+		{ "SlowMiddle", { 0.1f, 0.5f, 0.9f, 0.5f } },		//速い→遅い→速い(真ん中だけスロー)
+	};
 
 	/// <summary>
 	/// 修正分のキーの時刻を集める(昇順・重複なし)
@@ -285,16 +300,104 @@ bool TimeLineView::Draw(EditorState& state, float deltaTime)
 
 	//ここから下は、選択中のクリップについての表示と操作
 	AnimationClip& clip = state.clips[state.currentClipIndex];
+	const bool speedChanged = DrawSpeedRangeControls(state, clip);
+
 	const float duration = clip.duration_;
 	const std::vector<float> keyTimes = CollectKeyTimes(clip, state.selectedBoneIndex);
 
 	HandleKeyNavigation(state.playback, keyTimes, duration);
-	const bool keyEdited = DrawSeekBar(state, clip, keyTimes);
+	const bool keyEdited = DrawSeekBar(state, clip, keyTimes) || speedChanged;
 	AdvanceTime(state.playback, deltaTime, duration);
 
 	ImGui::End();
 	return keyEdited;
 }
+
+bool TimeLineView::DrawSpeedRangeControls(EditorState& state, AnimationClip& clip)
+{
+	//クリップが替わったら、区間を消す
+	if (speedRangeClip_ != state.currentClipIndex)
+	{
+		speedRangeIn_ = -1.0f;
+		speedRangeOut_ = -1.0f;
+		speedRangeClip_ = state.currentClipIndex;
+	}
+
+	const float time = state.playback.time;
+	ImGui::Text("Range Speed:");
+	ImGui::SameLine();
+	if (ImGui::Button("Set In##Speed")) speedRangeIn_ = time;
+	ImGui::SameLine();
+	if (ImGui::Button("Set Out##Speed")) speedRangeOut_ = time;
+	ImGui::SameLine();
+	if (ImGui::Button("Clear##Speed"))
+	{
+		speedRangeIn_ = -1.0f;
+		speedRangeOut_ = -1.0f;
+	}
+
+	//区間(未設定ならクリップの先頭・終端)
+	const float in = (speedRangeIn_ >= 0.0f) ? speedRangeIn_ : 0.0f;
+	const float out = (speedRangeOut_ >= 0.0f) ? speedRangeOut_ : clip.duration_;
+	ImGui::SameLine();
+	ImGui::Text("%.2f - %.2f s", std::min(in, out), std::max(in, out));
+
+	ImGui::SameLine();
+	ImGui::SetNextItemWidth(110.0f);
+	ImGui::SliderFloat("##RangeSpeed", &rangeSpeed_, kMinRangeSpeed, kMaxRangeSpeed, "%.2fx");
+
+	//区間の長さが変わったあとの長さの目安
+	const float length = std::abs(out - in);
+	ImGui::SameLine();
+	ImGui::TextDisabled("(%.2f s -> %.2f s)", length, length / rangeSpeed_);
+
+
+	//区間の中の緩急(ベジェ曲線)
+	ImGui::SameLine();
+	ImGui::Checkbox("Curve##Speed", &useSpeedCurve_);
+	if (useSpeedCurve_)
+	{
+		ImGui::SameLine();
+		if (ImGui::Button("Edit##SpeedCurve")) ImGui::OpenPopup("SpeedCurvePopup");
+	}
+	if (ImGui::BeginPopup("SpeedCurvePopup"))
+	{
+		ImGui::Text("Horizontal: new time  /  Vertical: original motion");
+		ImGui::TextDisabled("Steep = fast, Flat = slow");
+
+		BezierCurveWidget::Options options;
+		options.valueMin = 0.0f;	//時間が戻らないよう、0～1に収める
+		options.valueMax = 1.0f;
+		options.presets = kSpeedCurvePresets;
+		options.presetCount = IM_ARRAYSIZE(kSpeedCurvePresets);
+
+		ImGui::PushItemWidth(kSpeedCurvePopupWidth);
+		ImGui::BeginChild("##SpeedCurveArea", ImVec2(kSpeedCurvePopupWidth, 0.0f),
+			ImGuiChildFlags_AutoResizeY);
+		bool editStarted = false;
+		BezierCurveWidget::Draw("##SpeedCurve", speedCurve_, options, editStarted);
+		ImGui::EndChild();
+		ImGui::PopItemWidth();
+		ImGui::EndPopup();
+	}
+
+	ImGui::SameLine();
+	if (!ImGui::Button("Apply##Speed")) return false;
+	if (length < EditorConst::kFrameDuration) return false;	//区間が短すぎる(In点とOut点が同じなど)
+
+	//元の動きも書き換えるので、Undoには元の動きと長さも保存する
+	state.RecordUndo(true);
+	if (!clip.ChangeRangeSpeed(in, out, rangeSpeed_)) return false;
+
+	//区間は新しい長さに合わせて残す(続けて調整しやすいように)
+	const float start = std::min(in, out);
+	speedRangeIn_ = start;
+	speedRangeOut_ = start + length / rangeSpeed_;
+	state.playback.time = std::clamp(state.playback.time, 0.0f, clip.duration_);
+	state.playback.isPlaying = false;
+	return true;
+}
+
 
 bool TimeLineView::DrawSeekBar(EditorState& state, AnimationClip& clip, const std::vector<float>& keyTimes)
 {
@@ -320,6 +423,16 @@ bool TimeLineView::DrawSeekBar(EditorState& state, AnimationClip& clip, const st
 	//時刻 ⇔ 画面のX座標
 	auto timeToX = [&](float t) { return barMin.x + std::clamp(t / duration, 0.0f, 1.0f) * barWidth; };
 	auto xToTime = [&](float x) { return std::clamp((x - barMin.x) / barWidth, 0.0f, 1.0f) * duration; };
+
+
+	//速度変更の区間を、シークバーの上に半透明で描く(In点かOut点を決めたときだけ)
+	if (speedRangeIn_ >= 0.0f || speedRangeOut_ >= 0.0f)
+	{
+		const float in = (speedRangeIn_ >= 0.0f) ? speedRangeIn_ : 0.0f;
+		const float out = (speedRangeOut_ >= 0.0f) ? speedRangeOut_ : duration;
+		ImGui::GetWindowDrawList()->AddRectFilled(
+			ImVec2(timeToX(std::min(in, out)), barMin.y), ImVec2(timeToX(std::max(in, out)), barMax.y), kSpeedRangeColor);
+	}
 
 	//シークバーより手前に描くため、最前面の描画リストを使う
 	ImDrawList* drawList = ImGui::GetForegroundDrawList();

@@ -1,7 +1,9 @@
 #include "AnimationClip.h"
 #include<DirectXMath.h>
+#include<algorithm>          
 #include<cmath>
 #include<utility>
+#include"../Common/EditorConstants.h"   
 
 using namespace DirectX;
 
@@ -190,6 +192,105 @@ void AnimationClip::SetOffsetInterpolation(int boneIndex, float time, Interpolat
 		track->SetInterpolation(time, type);
 	}
 }
+
+bool AnimationClip::GetOffsetBezier(int boneIndex, float time, BezierHandles& out) const
+{
+	const BoneTrack* track = FindOffsetTrack(boneIndex);
+	return track != nullptr && track->GetBezier(time, out);
+}
+
+void AnimationClip::SetOffsetBezier(int boneIndex, float time, const BezierHandles& bezier)
+{
+	if (BoneTrack* track = FindTrack(offsetTracks_, boneIndex))
+	{
+		track->SetBezier(time, bezier);
+	}
+}
+
+//=============================================================
+// ‘¬“x‚Ì•ÏX
+//=============================================================
+
+bool AnimationClip::ChangeRangeSpeed(float startTime, float endTime, float speed, const BezierHandles* curve) 
+{
+	constexpr float kMinSpeed = 0.01f;
+
+	if (startTime > endTime) std::swap(startTime, endTime);
+	startTime = std::clamp(startTime, 0.0f, duration_);
+	endTime = std::clamp(endTime, 0.0f, duration_);
+	const float oldLength = endTime - startTime;
+	if (oldLength < EditorConst::kFrameDuration || speed < kMinSpeed) return false;
+
+	//‹æŠÔ‚Ì’·‚³‚Ì•Ï‰»(‚ä‚Á‚­‚è‚É‚·‚é‚Æ’·‚­‚È‚é)
+	const float newLength = oldLength / speed;
+	const float delta = newLength - oldLength;
+	const float newDuration = duration_ + delta;
+
+	//‹æŠÔ‚Ì’†‚ÌŠÉ‹}(–³‚¯‚ê‚Î’¼üˆê’è‚Ì‘¬‚³BŽžŠÔ‚ª–ß‚ç‚È‚¢‚æ‚¤A§Œä“_‚Ìy‚Í0`1‚ÉŽû‚ß‚é)
+	BezierHandles warp = { 1.0f / 3.0f, 1.0f / 3.0f, 2.0f / 3.0f, 2.0f / 3.0f };
+	if (curve != nullptr)
+	{
+		warp = *curve;
+		warp.x1 = std::clamp(warp.x1, 0.0f, 1.0f);
+		warp.x2 = std::clamp(warp.x2, 0.0f, 1.0f);
+		warp.y1 = std::clamp(warp.y1, 0.0f, 1.0f);
+		warp.y2 = std::clamp(warp.y2, 0.0f, 1.0f);
+	}
+
+	//V‚µ‚¢Žž ¨ Œ³‚ÌŽž(Œ³‚Ì“®‚«‚ð“Ç‚Ý’¼‚·‚Æ‚«‚ÉŽg‚¤)
+	auto newToOld = [=](float t)
+		{
+			if (t <= startTime) return t;
+			if (t <= startTime + newLength)
+			{
+				const float u = (t - startTime) / newLength;	//‹æŠÔ‚Ì’†‚ÌV‚µ‚¢ŽžŠÔ‚Ìi‚Ý‹ï‡(0`1)
+				return startTime + oldLength * Easing::EvaluateBezier(u, warp);
+			}
+			return t - delta;
+		};
+	//Œ³‚ÌŽž ¨ V‚µ‚¢Žž(C³•ª‚ÌƒL[‚ð‚¸‚ç‚·‚Æ‚«‚ÉŽg‚¤)
+	auto oldToNew = [=](float t)
+		{
+			if (t <= startTime) return t;
+			if (t <= endTime)
+			{
+				const float v = (t - startTime) / oldLength;	//‹æŠÔ‚Ì’†‚ÌŒ³‚Ì“®‚«‚Ìi‚Ý‹ï‡(0`1)
+				return startTime + newLength * Easing::InverseBezier(v, warp);
+			}
+			return t + delta;
+		};
+
+	//---------- Œ³‚Ì“®‚«:V‚µ‚¢ŽžŠÔ‚Åˆê’èŠÔŠu‚É“Ç‚Ý’¼‚·(“Ç‚Ýž‚Ý‚Æ“¯‚¶ŠÔŠu) ----------
+	const int frameCount = static_cast<int>(newDuration * EditorConst::kSampleFrameRate);
+	for (BoneTrack& track : boneTracks_)
+	{
+		const BoneTrack old = track;
+		track.translationTrack_.keys_.clear();
+		track.rotationTrack_.keys_.clear();
+		track.scaleTrack_.keys_.clear();
+
+		for (int f = 0; f <= frameCount; ++f)
+		{
+			const float t = (f == frameCount) ? newDuration : (f * EditorConst::kFrameDuration);
+			const Transform pose = old.Sample(newToOld(t), Transform{});
+			track.translationTrack_.AddKey(t, pose.translation_);
+			track.rotationTrack_.AddKey(t, pose.rotation_);
+			track.scaleTrack_.AddKey(t, pose.scale_);
+		}
+	}
+
+	//---------- C³•ª:ƒL[‚ÌŽž‚¾‚¯‚¸‚ç‚·(•À‚Ñ‡‚Í•Ï‚í‚ç‚È‚¢) ----------
+	for (BoneTrack& track : offsetTracks_)
+	{
+		for (auto& k : track.translationTrack_.keys_) k.time_ = oldToNew(k.time_);
+		for (auto& k : track.rotationTrack_.keys_)    k.time_ = oldToNew(k.time_);
+		for (auto& k : track.scaleTrack_.keys_)       k.time_ = oldToNew(k.time_);
+	}
+
+	duration_ = newDuration;
+	return true;
+}
+
 
 //=============================================================
 // Œ³‚Ì“®‚«‚ÆC³•ª‚ÌŒvŽZ

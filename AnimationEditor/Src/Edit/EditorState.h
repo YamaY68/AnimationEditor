@@ -57,11 +57,12 @@ struct EditorState
 	}
 
 	//今のクリップを編集する「直前」に呼ぶ(Undoの履歴に積む)
-	void RecordUndo(void)
+	//includeBase:元の動きと長さも保存するか(速度変更のように元の動きを書き換えるときだけtrue)
+	void RecordUndo(bool includeBase = false)
 	{
 		if (const AnimationClip* clip = GetActiveClip())
 		{
-			undoStack.Record(currentClipIndex, *clip);
+			undoStack.Record(currentClipIndex, *clip, includeBase);
 		}
 	}
 

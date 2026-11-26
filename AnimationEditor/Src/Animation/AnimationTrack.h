@@ -99,6 +99,8 @@ public:
 		RemoveKey(fromTime);
 		RemoveKey(toTime);	//移動先にあったキーは上書きする
 		AddKey(toTime, moved.value_, moved.interpolation_);
+		FindKey(toTime)->bezier_ = moved.bezier_;	//ベジェの曲線も引き継ぐ   ← 足す
+		return true;
 		return true;
 	}
 
@@ -126,6 +128,32 @@ public:
 			key->interpolation_ = type;
 		}
 	}
+
+	/// <summary>
+/// 指定時刻のキーのベジェ曲線を取得する
+/// </summary>
+/// <returns>キーが無ければfalse</returns>
+	bool GetBezier(float time, BezierHandles& out)const
+	{
+		if (const KeyFrame<T>* key = FindKey(time))
+		{
+			out = key->bezier_;
+			return true;
+		}
+		return false;
+	}
+
+	/// <summary>
+	/// 指定時刻のキーのベジェ曲線を設定する(キーが無ければ何もしない)
+	/// </summary>
+	void SetBezier(float time, const BezierHandles& bezier)
+	{
+		if (KeyFrame<T>* key = FindKey(time))
+		{
+			key->bezier_ = bezier;
+		}
+	}
+
 
 	/// <summary>
 	/// 区間内のキーをすべて消し、始点と終点にキーを打ち直す
@@ -169,7 +197,7 @@ public:
 		float factor = (span > 0.0f) ? ((time - prevKey.time_) / span) : 0.0f;
 
 		//補間方法は「前のキー」に設定されたものを使う
-		return KeyFrameMath::Interpolate(prevKey.value_, nextKey.value_, factor, prevKey.interpolation_);
+		return KeyFrameMath::Interpolate(prevKey.value_, nextKey.value_, factor, prevKey.interpolation_, prevKey.bezier_);
 	}
 };
 
@@ -247,6 +275,23 @@ struct BoneTrack
 		rotationTrack_.SetInterpolation(time, type);
 		scaleTrack_.SetInterpolation(time, type);
 	}
+
+	//指定時刻のキーのベジェ曲線を取得する(キーが無ければfalse)
+	bool GetBezier(float time, BezierHandles& out)const
+	{
+		return rotationTrack_.GetBezier(time, out)
+			|| translationTrack_.GetBezier(time, out)
+			|| scaleTrack_.GetBezier(time, out);
+	}
+
+	//指定時刻のキーのベジェ曲線を、3本まとめて設定する
+	void SetBezier(float time, const BezierHandles& bezier)
+	{
+		translationTrack_.SetBezier(time, bezier);
+		rotationTrack_.SetBezier(time, bezier);
+		scaleTrack_.SetBezier(time, bezier);
+	}
+
 
 	//区間内のキーを消し、始点と終点の姿勢でキーを打ち直す
 	void ReplaceRange(float rangeStart, float rangeEnd, const Transform& startPose, const Transform& endPose)
