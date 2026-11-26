@@ -8,7 +8,9 @@
 enum class MenuAction
 {
 	None,			//何も選ばれていない
-	AddAnimation	//アニメーションFBXを追加する
+	AddAnimation,	//アニメーションFBXを追加する
+	ExportCurrentClip,	//今のクリップをFBXに書き出す
+	ExportAllClips		//全クリップをFBXに書き出す
 };
 
 /// <summary>

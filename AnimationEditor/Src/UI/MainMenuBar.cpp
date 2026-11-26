@@ -20,6 +20,28 @@ MenuResult MainMenuBar::Draw(HWND hWnd)
 					result.filePath = path;
 				}
 			}
+
+			ImGui::Separator();
+
+			//編集したアニメーションを、ボーンとアニメーションだけのFBXに書き出す
+			if (ImGui::MenuItem("Export FBX (Current Clip)"))
+			{
+				std::string path = SaveFbxFileDialog(hWnd);
+				if (!path.empty())
+				{
+					result.action = MenuAction::ExportCurrentClip;
+					result.filePath = path;
+				}
+			}
+			if (ImGui::MenuItem("Export FBX (All Clips)"))
+			{
+				std::string path = SaveFbxFileDialog(hWnd);
+				if (!path.empty())
+				{
+					result.action = MenuAction::ExportAllClips;
+					result.filePath = path;
+				}
+			}
 			ImGui::EndMenu();
 		}
 		ImGui::EndMainMenuBar();

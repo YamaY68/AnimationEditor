@@ -9,6 +9,7 @@
 #include "Camera/Camera.h"
 #include "Fbx/FbxModelLoader.h"
 #include "Fbx/FbxMeshModel.h"
+#include "Fbx/FbxAnimationExporter.h"
 #include "Edit/EditorState.h"
 
 #include "UI/ImGuiManager.h"
@@ -80,6 +81,11 @@ private:
 	void AddAnimation(const std::string& filePath);
 	//読み込んだクリップに名前を付けて追加し、最初の1本を選択する
 	void AddClips(std::vector<AnimationClip>&& clips, const std::string& filePath);
+
+	//---------- 書き出し ----------
+	//編集したアニメーションをFBXに書き出す(allClips:全クリップか、今のクリップだけか)
+	void ExportFbx(const std::string& filePath, bool allClips);
+
 	//---------- ポーズを計算し直すかの判定用 ----------
 	//前回ポーズを求めたときの条件。これが変わったら計算し直す
 	struct SampleInputs
@@ -100,6 +106,7 @@ private:
 	InspectorView inspectorView_;
 	BoneGizmo boneGizmo_;
 	IKPinSet ikPins_;	//ピン留めしたIK
+	int pinnedClipIndex_ = -1;	//ピンを置いたときのクリップ(クリップが替わったらピンを外す)
 	Camera camera_;
 
 	FbxModelLoader loader_;
@@ -108,7 +115,7 @@ private:
 
 	//編集の状態(クリップ・再生・ブレンド・選択中のボーン・Undoなど)
 	EditorState state_;
-
+	std::string modelPath_;	//読み込んだモデルのFBX(書き出しのときに開き直す)
 	bool skeletonLoaded_ = false;
 	bool meshLoaded_ = false;
 	bool showBones_ = true;

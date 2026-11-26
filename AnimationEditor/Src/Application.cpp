@@ -197,8 +197,21 @@ bool Application::UpdateUI(float deltaTime)
 		AddAnimation(menu.filePath);
 	}
 
+	else if (menu.action == MenuAction::ExportCurrentClip || menu.action == MenuAction::ExportAllClips)
+	{
+		ExportFbx(menu.filePath, menu.action == MenuAction::ExportAllClips);
+	}
+
 	//タイムライン(再生時刻が進む。キーを移したり消したりしたらtrue)
 	const bool timelineKeyEdited = timelineView_.Draw(state_, deltaTime);
+
+
+	//クリップが替わったら、ピンを外す(前のクリップの姿勢で置いたピンなので)
+	if (state_.currentClipIndex != pinnedClipIndex_)
+	{
+		ikPins_.Clear();
+		pinnedClipIndex_ = state_.currentClipIndex;
+	}
 
 	//タイムラインで選ばれたクリップ(とブレンド先)の中身がまだなら、ここで読み込む
 //(インスペクターが元の動きを使うので、インスペクターより前に読み込んでおく)
@@ -217,7 +230,7 @@ bool Application::UpdateUI(float deltaTime)
 	//ギズモ(ボーン表示中だけ、選択中のボーンに出す)
 	//IKのときは、根元・中間・先端の3本が書き換わる
 	const int gizmoBone = showBones_ ? state_.selectedBoneIndex : -1;
-	//ピンにポールが固定されていれば、ギズモもその位置を使う
+	//ピンにポールが固a定されていれば、ギズモもその位置を使う
 	const IKPin* gizmoPin = ikPins_.Find(gizmoBone);
 	const DirectX::XMFLOAT3* pinnedPole = (gizmoPin != nullptr && gizmoPin->hasPole) ? &gizmoPin->polePosition : nullptr;
 	const std::vector<int> gizmoEdited = boneGizmo_.Draw(skeleton_, worldMatrices_, finalPose_, gizmoBone, pinnedPole);
@@ -480,6 +493,7 @@ bool Application::LoadParentModel(const std::string& filePath)
 
 	skeleton_ = std::move(newSkeleton);
 	meshModel_ = std::move(newMesh);	//古いテクスチャはムーブ代入の中で解放される
+	modelPath_ = filePath;
 	skeletonLoaded_ = true;
 	meshLoaded_ = true;
 
@@ -529,6 +543,32 @@ void Application::AddAnimation(const std::string& filePath)
 		AddClips(std::move(newClips), filePath);
 	}
 }
+
+void Application::ExportFbx(const std::string& filePath, bool allClips)
+{
+	if (!skeletonLoaded_ || filePath.empty()) return;
+
+	//書き出すクリップを集める(中身をまだ読み込んでいないクリップは、ここで読み込む)
+	std::vector<const AnimationClip*> clips;
+	for (int i = 0; i < static_cast<int>(state_.clips.size()); ++i)
+	{
+		if (!allClips && i != state_.currentClipIndex) continue;
+		EnsureClipLoaded(i);
+		clips.push_back(&state_.clips[i]);
+	}
+
+	std::string error;
+	if (FbxAnimationExporter::Export(modelPath_, filePath, skeleton_, clips, error))
+	{
+		const std::string message = "書き出しました(" + std::to_string(clips.size()) + "クリップ)\n" + filePath;
+		MessageBoxA(hWnd_, message.c_str(), "Export FBX", MB_OK | MB_ICONINFORMATION);
+	}
+	else
+	{
+		MessageBoxA(hWnd_, error.c_str(), "Export FBX", MB_OK | MB_ICONERROR);
+	}
+}
+
 
 void Application::AddClips(std::vector<AnimationClip>&& clips, const std::string& filePath)
 {
