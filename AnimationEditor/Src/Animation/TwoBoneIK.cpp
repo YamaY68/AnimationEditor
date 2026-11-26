@@ -121,9 +121,9 @@ bool TwoBoneIK::Solve(const Skeleton& skeleton, const std::vector<XMFLOAT4X4>& w
 
 	//先端は、ワールドの向きが目標の向きになるようにする
 	//(中間が回っても、足首や手首の向きがつられて変わらないように)
-	const XMVECTOR endWorld = XMQuaternionNormalize(XMLoadFloat4(&targetRotation));
-	XMStoreFloat4(&inOutPose[endBone].rotation_,
-		XMQuaternionNormalize(XMQuaternionMultiply(endWorld, XMQuaternionInverse(midWorld))));
+//根元のローカル回転(ワールド = ローカル × 親のワールド なので、ローカル = ワールド × 親のワールドの逆)
+	XMStoreFloat4(&inOutPose[root].rotation_,
+		XMQuaternionNormalize(XMQuaternionMultiply(rootWorld, XMQuaternionInverse(parentWorld))));
 	outRootBone = root;
 	outMidBone = mid;
 	return true;
