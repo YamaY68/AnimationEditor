@@ -6,6 +6,19 @@
 #include"../Common/Transform.h"
 #include"Pose.h"
 
+/// <summary>
+/// ボーン表示の見た目の設定
+/// </summary>
+struct BoneDrawStyle
+{
+	unsigned int boneColor = 0;		//ボーン(関節の間)の色
+	unsigned int jointColor = 0;	//関節の色
+	unsigned int selectedColor = 0;	//選択中のボーンの色
+	unsigned int hoveredColor = 0;	//カーソルが重なっているボーンの色
+	float jointRadius = 0.4f;		//関節の球の半径
+	float boneRadius = 0.2f;		//ボーンの太さ(カプセルの半径)
+};
+
 struct Bone
 {
 	std::string name_;	//ボーン名
@@ -49,8 +62,10 @@ public:
 	void ComputeWorldMatrices(const Pose& localPose, std::vector<DirectX::XMFLOAT4X4>& outWorldMatrices)const;
 	
 	//ボーンの骨格と関節球の描画
-	void DrawDebugBones(const std::vector<DirectX::XMFLOAT4X4>& worldMatrices, int boneColor, int jointColor)const;
-
+	//selectedIndexのボーン(関節と、そこから子へ伸びるボーン)は選択色、hoveredIndexのボーンはホバー色で描く
+	//(両方に当てはまるときは選択色を優先)
+	void DrawDebugBones(const std::vector<DirectX::XMFLOAT4X4>& worldMatrices, const BoneDrawStyle& style,
+		int selectedIndex = -1, int hoveredIndex = -1)const;
 	size_t GetBoneCount(void)const { return bones_.size(); }
 	const Bone& GetBone(size_t index)const { return bones_[index]; }
 	Bone& GetBone(size_t index) { return bones_[index]; }

@@ -149,6 +149,28 @@ bool AnimationClip::RemoveOffsetKey(int boneIndex, float time)
 	return track != nullptr && track->RemoveKeyframe(time);
 }
 
+bool AnimationClip::MoveOffsetKeys(int boneIndex, float fromTime, float toTime)
+{
+	bool moved = false;
+	for (BoneTrack& track : offsetTracks_)
+	{
+		if (boneIndex != -1 && track.boneIndex_ != boneIndex) continue;
+		moved |= track.MoveKeyframe(fromTime, toTime);
+	}
+	return moved;
+}
+
+bool AnimationClip::RemoveOffsetKeys(int boneIndex, float time)
+{
+	bool removed = false;
+	for (BoneTrack& track : offsetTracks_)
+	{
+		if (boneIndex != -1 && track.boneIndex_ != boneIndex) continue;
+		removed |= track.RemoveKeyframe(time);
+	}
+	return removed;
+}
+
 void AnimationClip::SetZeroOffsetKey(int boneIndex, float time)
 {
 	//Transformの初期値は「移動0・回転なし・スケール1」＝修正なし

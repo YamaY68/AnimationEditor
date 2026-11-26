@@ -50,6 +50,10 @@ public:
 	bool HasOffsetKey(int boneIndex, float time)const;
 	//修正分のキーを削除する(削除したらtrue)
 	bool RemoveOffsetKey(int boneIndex, float time);
+	//指定時刻の修正分のキーを別の時刻へ移す(boneIndex=-1なら全ボーン)。移したらtrue
+	bool MoveOffsetKeys(int boneIndex, float fromTime, float toTime);
+	//指定時刻の修正分のキーを削除する(boneIndex=-1なら全ボーン)。削除したらtrue
+	bool RemoveOffsetKeys(int boneIndex, float time);
 	//修正0(元の動きのまま)のキーを打つ
 	void SetZeroOffsetKey(int boneIndex, float time);
 	//修正分のキーの補間方法を取得する(キーが無ければfalse)

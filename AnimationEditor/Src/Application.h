@@ -17,7 +17,10 @@
 #include "UI/InspectorView.h"
 
 #include "Viewport/BonePicker.h"
-
+#include "Viewport/BoneGizmo.h"
+#include "Edit/PoseEdit.h"
+#include "Animation/TwoBoneIK.h"
+#include "Edit/IKPinSet.h"
 /// <summary>
 /// アプリケーション全体
 /// 1フレームの流れ:入力 → UI → ポーズの更新 → 描画
@@ -42,8 +45,12 @@ private:
 	void UpdateFrame(void);
 	//ショートカットキー(Undo/Redo、ボーン表示の切り替え)
 	void HandleShortcuts(void);
-	//ビューポートの左クリックで、ボーンを選択する
-	void HandleBonePicking(void);	
+	//カーソルが重なっているボーンを求める
+	void UpdateHoveredBone(void);
+	//ビューポートの左クリックで、ボーンを選択する(何もない所なら選択を外す)
+	void HandleBonePicking(void);
+	//ボーンを選択中に右クリックしたら、ギズモの移動と回転を切り替える
+	void HandleGizmoToggleClick(void);
 	//UI(メニュー・タイムライン・インスペクター)を描画し、操作を反映する
 	//戻り値:キーが変更されたか(ポーズを計算し直す必要があるか)
 	bool UpdateUI(float deltaTime);
@@ -91,6 +98,8 @@ private:
 	ImGuiManager imguiManager_;
 	TimeLineView timelineView_;
 	InspectorView inspectorView_;
+	BoneGizmo boneGizmo_;
+	IKPinSet ikPins_;	//ピン留めしたIK
 	Camera camera_;
 
 	FbxModelLoader loader_;
@@ -111,4 +120,5 @@ private:
 
 	SampleInputs lastSampleInputs_;	//前回ポーズを求めたときの条件
 	bool poseDirty_ = true;			//条件に関係なく、次のフレームでポーズを計算し直すか
+	int hoveredBoneIndex_ = -1;	//カーソルが重なっているボーン(-1:無し)
 };

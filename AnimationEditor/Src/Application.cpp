@@ -30,6 +30,9 @@ namespace
 	constexpr int kSelectedBoneDivisions = 12;	//その球の分割数
 	constexpr float kBonePickRadiusPx = 12.0f;	//クリックで関節を選べる距離(画面上のピクセル)
 	constexpr float kBoneLinePickRadiusPx = 6.0f;	//クリックでラインを選べる距離(画面上のピクセル)	//---------- その他 ----------
+	constexpr float kJointRadius = 0.6f;	//関節の球の半径
+	constexpr float kBoneRadius = 0.3f;		//ボーンの太さ(カプセルの半径)
+	constexpr float kPinRadius = 1.0f;	//ピンの位置に描く球の半径
 	//1フレームの経過時間(秒)。60fpsで動く前提の固定値
 	constexpr float kFixedDeltaTime = 1.0f / 60.0f;
 	const char* const kDefaultModelPath = "Data/DefaultModel1.fbx";
@@ -121,7 +124,9 @@ void Application::UpdateFrame(void)
 	if (skeletonLoaded_)
 	{
 		UpdatePose(keyEdited);
+		UpdateHoveredBone();
 		HandleBonePicking();
+		HandleGizmoToggleClick();
 	}
 	Render();
 
@@ -141,6 +146,32 @@ void Application::HandleShortcuts(void)
 	if (!io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_B, false))
 	{
 		showBones_ = !showBones_;
+	}
+
+	//ギズモの切り替え(ドラッグ中は切り替えない)
+//W:移動 E:回転 X:ローカル/ワールド
+	if (!io.KeyCtrl && !boneGizmo_.IsUsing())
+	{
+		if (ImGui::IsKeyPressed(ImGuiKey_W, false)) boneGizmo_.SetOperation(BoneGizmo::Operation::Translate);
+		if (ImGui::IsKeyPressed(ImGuiKey_E, false)) boneGizmo_.SetOperation(BoneGizmo::Operation::Rotate);
+		if (ImGui::IsKeyPressed(ImGuiKey_X, false)) boneGizmo_.ToggleSpace();
+	}
+
+	if (ImGui::IsKeyPressed(ImGuiKey_W, false)) boneGizmo_.SetOperation(BoneGizmo::Operation::Translate);
+	if (ImGui::IsKeyPressed(ImGuiKey_E, false)) boneGizmo_.SetOperation(BoneGizmo::Operation::Rotate);
+	if (ImGui::IsKeyPressed(ImGuiKey_I, false)) boneGizmo_.SetOperation(BoneGizmo::Operation::IK);
+	if (ImGui::IsKeyPressed(ImGuiKey_X, false)) boneGizmo_.ToggleSpace();
+
+	//P:選択中の先端ボーンをピン留め・解除(IKのチェーンが作れるボーンだけ)
+	if (!io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_P, false))
+	{
+		const int bone = state_.selectedBoneIndex;
+		int rootBone = -1;
+		int midBone = -1;
+		if (TwoBoneIK::FindChain(skeleton_, bone, rootBone, midBone))
+		{
+			ikPins_.Toggle(bone, worldMatrices_);
+		}
 	}
 
 	//Ctrl+Z：元に戻す　Ctrl+Y / Ctrl+Shift+Z：やり直す
@@ -170,8 +201,8 @@ bool Application::UpdateUI(float deltaTime)
 		AddAnimation(menu.filePath);
 	}
 
-	//タイムライン(再生時刻が進む)
-	timelineView_.Draw(state_, deltaTime);
+	//タイムライン(再生時刻が進む。キーを移したり消したりしたらtrue)
+	const bool timelineKeyEdited = timelineView_.Draw(state_, deltaTime);
 
 	//タイムラインで選ばれたクリップ(とブレンド先)の中身がまだなら、ここで読み込む
 //(インスペクターが元の動きを使うので、インスペクターより前に読み込んでおく)
@@ -184,14 +215,55 @@ bool Application::UpdateUI(float deltaTime)
 	//インスペクター(モデルが無いときは編集するものが無いので出さない)
 	if (!skeletonLoaded_) return false;
 	const InspectorResult inspector = inspectorView_.Draw(skeleton_, finalPose_, state_);
+	bool poseEdited = inspector.poseEdited;
+	bool keyEdited = inspector.keyEdited;
+
+	//ギズモ(ボーン表示中だけ、選択中のボーンに出す)
+	//IKのときは、根元・中間・先端の3本が書き換わる
+	const int gizmoBone = showBones_ ? state_.selectedBoneIndex : -1;
+	const std::vector<int> gizmoEdited = boneGizmo_.Draw(skeleton_, worldMatrices_, finalPose_, gizmoBone);
+	for (int bone : gizmoEdited)
+	{
+		poseEdited = true;
+		if (PoseEdit::OnPoseChanged(finalPose_[bone], bone, skeleton_, state_))
+		{
+			keyEdited = true;
+		}
+	}
+
+	//ピン留めした先端をIKで動かしたら、ピンもそこへ移す
+	if (!gizmoEdited.empty()
+		&& boneGizmo_.GetOperation() == BoneGizmo::Operation::IK
+		&& ikPins_.Has(gizmoBone))
+	{
+		ikPins_.Set(gizmoBone, boneGizmo_.GetIKTargetPosition(), boneGizmo_.GetIKTargetRotation());
+	}
+
+	//姿勢をいじったら、ピン留めした先端がその場に残るように解き直す
+	if (poseEdited && !ikPins_.IsEmpty())
+	{
+		for (int bone : ikPins_.Apply(skeleton_, finalPose_))
+		{
+			if (PoseEdit::OnPoseChanged(finalPose_[bone], bone, skeleton_, state_))
+			{
+				keyEdited = true;
+			}
+		}
+	}
+
+	//ドラッグが終わったら、次の編集で新しくUndoの履歴を積めるようにする
+	if (!ImGui::IsAnyItemActive() && !boneGizmo_.IsUsing())
+	{
+		state_.editRecorded = false;
+	}
 
 	//姿勢をいじったら再生を止める(再生中だと次のフレームで上書きされるため)
-	if (inspector.poseEdited)
+	if (poseEdited)
 	{
 		state_.playback.isPlaying = false;
 	}
 
-	return inspector.keyEdited;
+	return keyEdited || timelineKeyEdited;
 }
 
 void Application::EnsureClipLoaded(int clipIndex)
@@ -310,16 +382,37 @@ void Application::DrawModel(void) const
 void Application::DrawBones(void) const
 {
 	//モデルに隠れないよう、Zバッファを使わずに手前に描く
+	//ライトの影響で色が暗くならないよう、ライティングも切る
 	SetUseZBuffer3D(FALSE);
-	skeleton_.DrawDebugBones(worldMatrices_, GetColor(255, 255, 0), GetColor(0, 255, 255));
+	SetUseLighting(FALSE);
 
-	//選択中のボーンにオレンジの球を描く
+	BoneDrawStyle style;
+	style.boneColor = GetColor(255, 255, 0);		//黄
+	style.jointColor = GetColor(0, 255, 255);		//水色
+	style.selectedColor = GetColor(255, 0, 0);		//選択中(赤)
+	style.hoveredColor = GetColor(255, 128, 0);		//カーソルが重なっている(オレンジ)
+	style.jointRadius = kJointRadius;
+	style.boneRadius = kBoneRadius;
+
 	const int selected = state_.selectedBoneIndex;
+	skeleton_.DrawDebugBones(worldMatrices_, style, selected, hoveredBoneIndex_);
+
+	//選択中のボーンに大きい球を描く
 	if (selected >= 0 && selected < static_cast<int>(worldMatrices_.size()))
 	{
-		const unsigned int color = GetColor(255, 128, 0);
-		DrawSphere3D(GetPosition(worldMatrices_[selected]), kSelectedBoneRadius, kSelectedBoneDivisions, color, color, TRUE);
+		DrawSphere3D(GetPosition(worldMatrices_[selected]), kSelectedBoneRadius, kSelectedBoneDivisions,
+			style.selectedColor, style.selectedColor, TRUE);
 	}
+	//ピンの位置に紫の球を描く
+	const unsigned int pinColor = GetColor(200, 80, 255);
+	for (const IKPin& pin : ikPins_.GetPins())
+	{
+		const VECTOR pos = VGet(pin.position.x, pin.position.y, pin.position.z);
+		DrawSphere3D(pos, kPinRadius, kSelectedBoneDivisions, pinColor, pinColor, TRUE);
+	}
+
+	SetUseLighting(TRUE);
+
 	SetUseZBuffer3D(TRUE);
 }
 
@@ -374,6 +467,7 @@ bool Application::LoadParentModel(const std::string& filePath)
 
 	//モデルが替わったので、クリップ・選択・Undoなどをリセットする
 	state_.ResetForNewModel();
+	ikPins_.Clear();	//ピンのボーン番号は前のモデルのものなので外す
 	//モデルの大きさはモデルごとに違うので、カメラを合わせ直す
 	FrameCameraToModel();
 	//モデルのFBXにアニメーションが入っていれば、クリップとして追加する
@@ -442,21 +536,48 @@ void Application::AddClips(std::vector<AnimationClip>&& clips, const std::string
 }
 
 
-void Application::HandleBonePicking(void)
+void Application::UpdateHoveredBone(void)
 {
-	//ボーンを表示していない・UIを操作している・クリックしていないときは何もしない
+	hoveredBoneIndex_ = -1;
+
+	//ボーンを表示していない・UIの上・ギズモの上では、ボーンに重なっていない扱いにする
 	if (!showBones_) return;
 	if (imguiManager_.WantCaptureMouse()) return;
-	if (!ImGui::IsMouseClicked(ImGuiMouseButton_Left)) return;
+	if (boneGizmo_.IsHovered() || boneGizmo_.IsUsing()) return;
 
 	int mouseX, mouseY;
 	GetMousePoint(&mouseX, &mouseY);
-	const int picked = BonePicker::Pick(skeleton_, worldMatrices_,
+
+	hoveredBoneIndex_ = BonePicker::Pick(skeleton_, worldMatrices_,
 		static_cast<float>(mouseX), static_cast<float>(mouseY),
 		kBonePickRadiusPx, kBoneLinePickRadiusPx);
-	//近くにボーンがあったときだけ選択を変える(何もない所のクリックでは選択を外さない)
-	if (picked >= 0)
-	{
-		state_.selectedBoneIndex = picked;
-	}
+}
+
+void Application::HandleBonePicking(void)
+{
+	//ボーンを表示していない・UIを操作している・ギズモの上・クリックしていないときは何もしない
+	if (!showBones_) return;
+	if (imguiManager_.WantCaptureMouse()) return;
+	if (boneGizmo_.IsHovered() || boneGizmo_.IsUsing()) return;
+	if (!ImGui::IsMouseClicked(ImGuiMouseButton_Left)) return;
+
+	//カーソルが重なっているボーンを選ぶ(無ければ-1になり、選択が外れる)
+	state_.selectedBoneIndex = hoveredBoneIndex_;
+}
+
+void Application::HandleGizmoToggleClick(void)
+{
+	//ボーンを選んでいない・UIを操作している・ギズモをドラッグ中なら何もしない
+	if (!showBones_ || state_.selectedBoneIndex < 0) return;
+	if (imguiManager_.WantCaptureMouse()) return;
+	if (boneGizmo_.IsUsing()) return;
+
+	//右ボタンを離した瞬間だけ判定する
+	if (!ImGui::IsMouseReleased(ImGuiMouseButton_Right)) return;
+	//押してから離すまでにマウスが動いていたら、カメラの回転なので切り替えない
+	//(MouseDragMaxDistanceSqr:押している間に動いた最大距離の2乗)
+	const ImGuiIO& io = ImGui::GetIO();
+	const float threshold = io.MouseDragThreshold;
+	if (io.MouseDragMaxDistanceSqr[ImGuiMouseButton_Right] >= threshold * threshold) return;
+	boneGizmo_.ToggleOperation();
 }

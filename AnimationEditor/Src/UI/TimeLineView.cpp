@@ -211,49 +211,20 @@ namespace
 	}
 
 	/// <summary>
-	/// シークバーと、その上のキーマーカー(クリックでその時刻へ移動)
+	/// キーマーカー(ひし形)を1つ描く
 	/// </summary>
-	void DrawSeekBar(PlaybackState& playback, const std::vector<float>& keyTimes, float duration)
+	/// <param name="highlighted">再生位置にある・ドラッグ中なら白く大きく描く</param>
+	void DrawKeyMarker(ImDrawList* drawList, float posX, float centerY, bool highlighted)
 	{
-		ImGui::SetNextItemWidth(-1.0f);
-		ImGui::SliderFloat("##TimeSeek", &playback.time, 0.0f, (duration > 0.0f ? duration : 1.0f), "%.3f s");
-
-		//シークバーの画面上の範囲
-		const ImVec2 barMin = ImGui::GetItemRectMin();
-		const ImVec2 barMax = ImGui::GetItemRectMax();
-		const float barWidth = barMax.x - barMin.x;
-		if (duration <= 0.0f || barWidth <= 0.0f) return;
-
-		//シークバーより手前に描くため、最前面の描画リストを使う
-		ImDrawList* drawList = ImGui::GetForegroundDrawList();
-		const float centerY = (barMin.y + barMax.y) * 0.5f;
-		const ImVec2 mouse = ImGui::GetMousePos();
-		const bool clicked = ImGui::IsMouseClicked(ImGuiMouseButton_Left);
-
-		for (float keyTime : keyTimes)
-		{
-			const float posX = barMin.x + std::clamp(keyTime / duration, 0.0f, 1.0f) * barWidth;
-
-			//マーカーがクリックされたらその時刻へ移動
-			if (clicked && std::abs(mouse.x - posX) <= kMarkerHitRadius && std::abs(mouse.y - centerY) <= kMarkerHitRadius)
-			{
-				playback.time = keyTime;
-				playback.isPlaying = false;
-				ImGui::ClearActiveID();	//下のシークバーがドラッグ状態にならないようにする
-			}
-
-			//再生位置にあるキーは、選択中として白く大きく描く
-			const bool isCurrent = std::abs(keyTime - playback.time) < EditorConst::kKeyTimeEpsilon;
-			const float r = isCurrent ? kCurrentMarkerRadius : kMarkerRadius;
-			const ImVec2 diamond[4] = {
-				ImVec2(posX, centerY - r),
-				ImVec2(posX + r, centerY),
-				ImVec2(posX, centerY + r),
-				ImVec2(posX - r, centerY)
-			};
-			drawList->AddConvexPolyFilled(diamond, 4, isCurrent ? kCurrentMarkerColor : kMarkerColor);
-			drawList->AddPolyline(diamond, 4, kMarkerOutlineColor, ImDrawFlags_Closed, 1.5f);
-		}
+		const float r = highlighted ? kCurrentMarkerRadius : kMarkerRadius;
+		const ImVec2 diamond[4] = {
+			ImVec2(posX, centerY - r),
+			ImVec2(posX + r, centerY),
+			ImVec2(posX, centerY + r),
+			ImVec2(posX - r, centerY)
+		};
+		drawList->AddConvexPolyFilled(diamond, 4, highlighted ? kCurrentMarkerColor : kMarkerColor);
+		drawList->AddPolyline(diamond, 4, kMarkerOutlineColor, ImDrawFlags_Closed, 1.5f);
 	}
 
 	/// <summary>
@@ -288,7 +259,7 @@ namespace
 	}
 }
 
-void TimeLineView::Draw(EditorState& state, float deltaTime)
+bool TimeLineView::Draw(EditorState& state, float deltaTime)
 {
 	ImGui::SetNextWindowSize(kWindowSize, ImGuiCond_FirstUseEver);
 	ImGui::Begin("Timeline");
@@ -299,7 +270,7 @@ void TimeLineView::Draw(EditorState& state, float deltaTime)
 		ImGui::Text("Drag & Drop Base Model (.fbx)");
 		ImGui::Text("Add Animation via File -> AddAnimation(.fbx)");
 		ImGui::End();
-		return;
+		return false;
 	}
 
 	//クリップの番号が範囲外なら先頭にする
@@ -313,13 +284,121 @@ void TimeLineView::Draw(EditorState& state, float deltaTime)
 	DrawBlendControls(state);
 
 	//ここから下は、選択中のクリップについての表示と操作
-	const AnimationClip& clip = state.clips[state.currentClipIndex];
+	AnimationClip& clip = state.clips[state.currentClipIndex];
 	const float duration = clip.duration_;
 	const std::vector<float> keyTimes = CollectKeyTimes(clip, state.selectedBoneIndex);
 
 	HandleKeyNavigation(state.playback, keyTimes, duration);
-	DrawSeekBar(state.playback, keyTimes, duration);
+	const bool keyEdited = DrawSeekBar(state, clip, keyTimes);
 	AdvanceTime(state.playback, deltaTime, duration);
 
 	ImGui::End();
+	return keyEdited;
+}
+
+bool TimeLineView::DrawSeekBar(EditorState& state, AnimationClip& clip, const std::vector<float>& keyTimes)
+{
+	PlaybackState& playback = state.playback;
+	const float duration = clip.duration_;
+	const float eps = EditorConst::kKeyTimeEpsilon;
+
+	ImGui::SetNextItemWidth(-1.0f);
+	ImGui::SliderFloat("##TimeSeek", &playback.time, 0.0f, (duration > 0.0f ? duration : 1.0f), "%.3f s");
+
+	//シークバーの画面上の範囲
+	const ImVec2 barMin = ImGui::GetItemRectMin();
+	const ImVec2 barMax = ImGui::GetItemRectMax();
+	const float barWidth = barMax.x - barMin.x;
+
+	//クリップが切り替わったら、ドラッグはやめる
+	if (keyDrag_.active && keyDrag_.clipIndex != state.currentClipIndex)
+	{
+		keyDrag_ = KeyDrag{};
+	}
+	if (duration <= 0.0f || barWidth <= 0.0f) return false;
+
+	//時刻 ⇔ 画面のX座標
+	auto timeToX = [&](float t) { return barMin.x + std::clamp(t / duration, 0.0f, 1.0f) * barWidth; };
+	auto xToTime = [&](float x) { return std::clamp((x - barMin.x) / barWidth, 0.0f, 1.0f) * duration; };
+
+	//シークバーより手前に描くため、最前面の描画リストを使う
+	ImDrawList* drawList = ImGui::GetForegroundDrawList();
+	const float centerY = (barMin.y + barMax.y) * 0.5f;
+	const ImVec2 mouse = ImGui::GetMousePos();
+	const bool leftClicked = ImGui::IsMouseClicked(ImGuiMouseButton_Left);
+	const bool rightClicked = ImGui::IsMouseClicked(ImGuiMouseButton_Right);
+
+	bool keyEdited = false;
+	for (float keyTime : keyTimes)
+	{
+		const float posX = timeToX(keyTime);
+		const bool hovered = std::abs(mouse.x - posX) <= kMarkerHitRadius
+			&& std::abs(mouse.y - centerY) <= kMarkerHitRadius;
+
+		//左クリック:その時刻へ移動し、ドラッグを始める
+		if (hovered && leftClicked)
+		{
+			playback.time = keyTime;
+			playback.isPlaying = false;
+			ImGui::ClearActiveID();	//下のシークバーがドラッグ状態にならないようにする
+
+			keyDrag_.active = true;
+			keyDrag_.clipIndex = state.currentClipIndex;
+			keyDrag_.boneIndex = state.selectedBoneIndex;
+			keyDrag_.fromTime = keyTime;
+			keyDrag_.toTime = keyTime;
+		}
+
+		//右クリック:キーを消す(ドラッグ中は消さない)
+		if (hovered && rightClicked && !keyDrag_.active)
+		{
+			state.RecordUndo();
+			if (clip.RemoveOffsetKeys(state.selectedBoneIndex, keyTime))
+			{
+				keyEdited = true;
+			}
+			continue;	//消したキーは描かない
+		}
+
+		//ドラッグ中のキーは、元の位置には描かない(下で移動先に描く)
+		if (keyDrag_.active && std::abs(keyTime - keyDrag_.fromTime) < eps) continue;
+
+		const bool isCurrent = std::abs(keyTime - playback.time) < eps;
+		DrawKeyMarker(drawList, posX, centerY, isCurrent);
+	}
+
+	//---------- キーのドラッグ ----------
+	if (keyDrag_.active)
+	{
+		//押してからある程度マウスが動いたら、ドラッグとみなす(クリックだけで少しずれないように)
+		const ImGuiIO& io = ImGui::GetIO();
+		const float threshold = io.MouseDragThreshold;
+		const bool dragged = io.MouseDragMaxDistanceSqr[ImGuiMouseButton_Left] >= threshold * threshold;
+
+		if (dragged)
+		{
+			//マウスの位置の時刻を、フレーム単位にそろえる
+			const float frame = EditorConst::kFrameDuration;
+			const float snapped = std::round(xToTime(mouse.x) / frame) * frame;
+			keyDrag_.toTime = std::clamp(snapped, 0.0f, duration);
+			ImGui::SetTooltip("%.3f s", keyDrag_.toTime);
+		}
+		DrawKeyMarker(drawList, timeToX(keyDrag_.toTime), centerY, true);
+
+		//離したら、動いていればキーを移す
+		if (ImGui::IsMouseReleased(ImGuiMouseButton_Left))
+		{
+			if (std::abs(keyDrag_.toTime - keyDrag_.fromTime) >= eps)
+			{
+				state.RecordUndo();
+				if (clip.MoveOffsetKeys(keyDrag_.boneIndex, keyDrag_.fromTime, keyDrag_.toTime))
+				{
+					playback.time = keyDrag_.toTime;
+					keyEdited = true;
+				}
+			}
+			keyDrag_.active = false;
+		}
+	}
+	return keyEdited;
 }

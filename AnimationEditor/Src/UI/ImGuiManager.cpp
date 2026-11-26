@@ -4,6 +4,8 @@
 #include<imgui_impl_win32.h>
 #include<imgui_impl_dx11.h>
 #include<d3d11.h>
+#include<ImGuizmo.h>
+
 //ImGui側で定義されているWin32ウィンドウプロシージャハンドラの外部定義
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
@@ -76,10 +78,10 @@ void ImGuiManager::Finalize(void)
 void ImGuiManager::BeginFrame(void)
 {
     if (!isInitialized_)return;
-    //DirectX１１とWin32のフレーム状態の更新のあとImGui本体の新規フレームを開始
     ImGui_ImplDX11_NewFrame();
     ImGui_ImplWin32_NewFrame();
     ImGui::NewFrame();
+    ImGuizmo::BeginFrame();	
 }
 
 void ImGuiManager::EndFrame(void)

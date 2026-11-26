@@ -133,6 +133,11 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="Src\Edit\IKPinSet.cpp" />
+    <ClCompile Include="Src\Animation\TwoBoneIK.cpp" />
+    <ClCompile Include="Src\Viewport\BoneGizmo.cpp" />
+    <ClCompile Include="Library\ImGui\ImGuizmo.cpp" />
+    <ClCompile Include="Src\Edit\PoseEdit.cpp" />
     <ClCompile Include="Src\Viewport\BonePicker.cpp" />
     <ClCompile Include="Library\ImGui\imgui.cpp" />
     <ClCompile Include="Library\ImGui\imgui_demo.cpp" />
@@ -156,6 +161,11 @@
     <ClCompile Include="Src\Edit\UndoStack.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Src\Edit\IKPinSet.h" />
+    <ClInclude Include="Src\Animation\TwoBoneIK.h" />
+    <ClInclude Include="Src\Viewport\BoneGizmo.h" />
+    <ClInclude Include="Library\ImGui\ImGuizmo.h" />
+    <ClInclude Include="Src\Edit\PoseEdit.h" />
     <ClInclude Include="Src\Viewport\BonePicker.h" />
     <ClInclude Include="Library\ImGui\imconfig.h" />
     <ClInclude Include="Library\ImGui\imgui.h" />

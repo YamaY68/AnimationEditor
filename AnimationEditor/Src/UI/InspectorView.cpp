@@ -4,7 +4,7 @@
 #include<vector>
 #include"../Common/EditorConstants.h"
 #include"../Common/RotationUtil.h"
-
+#include"../Edit/PoseEdit.h"
 namespace
 {
 	//表示中のオイラー角を使い続けるかの判定で、この内積以上なら「回転は外から変わっていない」とみなす
@@ -76,12 +76,6 @@ InspectorResult InspectorView::Draw(const Skeleton& skeleton, Pose& inOutPose, E
 		{
 			ImGui::TextDisabled("Load an Animation clip to edit keys");
 		}
-	}
-
-	//ドラッグが終わったら、次の編集で新しくUndoの履歴を積めるようにする
-	if (!ImGui::IsAnyItemActive())
-	{
-		editRecorded_ = false;
 	}
 
 	ImGui::End();
@@ -180,18 +174,10 @@ void InspectorView::OnPoseChanged(const Transform& trs, int boneIndex, const Ske
 	EditorState& state, InspectorResult& result)
 {
 	result.poseEdited = true;
-
-	AnimationClip* clip = state.GetActiveClip();
-	if (!state.autoKey || clip == nullptr) return;
-
-	//ドラッグ1回につき、Undoの履歴は1つだけ積む
-	if (!editRecorded_)
+	if (PoseEdit::OnPoseChanged(trs, boneIndex, skeleton, state))
 	{
-		state.RecordUndo();
-		editRecorded_ = true;
+		result.keyEdited = true;
 	}
-	clip->SetOffsetKey(boneIndex, state.playback.time, trs, skeleton);
-	result.keyEdited = true;
 }
 
 void InspectorView::DrawTransformEditor(Transform& trs, int boneIndex, const Skeleton& skeleton,

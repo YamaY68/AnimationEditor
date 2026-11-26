@@ -89,20 +89,34 @@ void Skeleton::ComputeWorldMatrices(const Pose& localPose, std::vector<DirectX::
     }
 }
 
-void Skeleton::DrawDebugBones(const std::vector<DirectX::XMFLOAT4X4>& worldMatrices, int boneColor, int jointColor) const
+void Skeleton::DrawDebugBones(const std::vector<DirectX::XMFLOAT4X4>& worldMatrices, const BoneDrawStyle& style,
+    int selectedIndex, int hoveredIndex) const
 {
-    const size_t count = bones_.size();
+    constexpr int kDivisions = 8;   //球とカプセルの分割数(多いほど滑らかだが重い)
+
+    //ボーンの色を決める(選択中 → ホバー中 → 通常 の順に優先)
+    auto colorOf = [&](int boneIndex, unsigned int normalColor)
+        {
+            if (boneIndex == selectedIndex) return style.selectedColor;
+            if (boneIndex == hoveredIndex) return style.hoveredColor;
+            return normalColor;
+        };
+
+    const size_t count = min(bones_.size(), worldMatrices.size());
     for (size_t i = 0; i < count; ++i)
     {
         VECTOR currentPos = VGet(worldMatrices[i]._41, worldMatrices[i]._42, worldMatrices[i]._43);
 
-        DrawSphere3D(currentPos, 0.4f, 8, jointColor, jointColor, TRUE);
+        const unsigned int joint = colorOf(static_cast<int>(i), style.jointColor);
+        DrawSphere3D(currentPos, style.jointRadius, kDivisions, joint, joint, TRUE);
 
         int p = bones_[i].parentIndex_;
-        if (p >= 0 && p < static_cast<int>(worldMatrices.size()))
+        if (p >= 0 && p < static_cast<int>(count))
         {
             VECTOR parentPos = VGet(worldMatrices[p]._41, worldMatrices[p]._42, worldMatrices[p]._43);
-            DrawLine3D(parentPos, currentPos, boneColor);
+            //親→自分のボーンは親のボーンとして色を決める
+            const unsigned int bone = colorOf(p, style.boneColor);
+            DrawCapsule3D(parentPos, currentPos, style.boneRadius, kDivisions, bone, bone, TRUE);
         }
     }
 }

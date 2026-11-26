@@ -86,6 +86,23 @@ public:
 	}
 
 	/// <summary>
+/// 指定時刻のキーを別の時刻へ移す(移動先にキーがあれば上書きする)
+/// </summary>
+/// <returns>移したらtrue</returns>
+	bool MoveKey(float fromTime, float toTime)
+	{
+		const KeyFrame<T>* key = FindKey(fromTime);
+		if (key == nullptr) return false;
+
+		//消す前に中身を取っておく
+		const KeyFrame<T> moved = *key;
+		RemoveKey(fromTime);
+		RemoveKey(toTime);	//移動先にあったキーは上書きする
+		AddKey(toTime, moved.value_, moved.interpolation_);
+		return true;
+	}
+
+	/// <summary>
 	/// 指定時刻のキーの補間方法を取得する
 	/// </summary>
 	/// <returns>キーが無ければfalse</returns>
@@ -204,6 +221,15 @@ struct BoneTrack
 		removed |= rotationTrack_.RemoveKey(time);
 		removed |= scaleTrack_.RemoveKey(time);
 		return removed;
+	}
+
+	//指定時刻のキーを別の時刻へ移す(どれか1つでも移したらtrue)
+	bool MoveKeyframe(float fromTime, float toTime)
+	{
+		bool moved = translationTrack_.MoveKey(fromTime, toTime);
+		moved |= rotationTrack_.MoveKey(fromTime, toTime);
+		moved |= scaleTrack_.MoveKey(fromTime, toTime);
+		return moved;
 	}
 
 	//指定時刻のキーの補間方法を取得する(キーが無ければfalse)

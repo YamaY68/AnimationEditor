@@ -35,7 +35,7 @@ struct EditorState
 	int currentClipIndex = 0;			//再生・編集中のクリップ
 	int selectedBoneIndex = -1;			//選択中のボーン(-1:未選択)
 	bool autoKey = true;				//姿勢を変えたら自動でキーを打つか
-
+	bool editRecorded = false;	//今のドラッグで、Undoの履歴をもう積んだか(インスペクターとギズモで共有)
 	PlaybackState playback;
 	BlendState blend;
 	UndoStack undoStack;
