@@ -363,3 +363,13 @@ MigrationBackup/
 FodyWeavers.xsd
 
 Log.txt
+
+
+# FBX SDKのDLL版(libfbxsdk.lib と libfbxsdk.dll)だけはリポジトリに入れる
+# (上の x64/ ・Debug/ ・Release/ の除外に巻き込まれないように、フォルダごと除外を外してから、ほかのファイルを除外し直す)
+!AnimationEditor/Library/FBXSDK/2020.3.11/lib/x64/
+!AnimationEditor/Library/FBXSDK/2020.3.11/lib/x64/debug/
+!AnimationEditor/Library/FBXSDK/2020.3.11/lib/x64/release/
+AnimationEditor/Library/FBXSDK/2020.3.11/lib/x64/*/*
+!AnimationEditor/Library/FBXSDK/2020.3.11/lib/x64/*/libfbxsdk.lib
+!AnimationEditor/Library/FBXSDK/2020.3.11/lib/x64/*/libfbxsdk.dll

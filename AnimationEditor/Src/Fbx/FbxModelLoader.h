@@ -4,15 +4,11 @@
 #include<fbxsdk.h>
 #include<unordered_set>
 #include<unordered_map>
-#if defined(_DEBUG)
-#pragma comment(lib, "libfbxsdk-mt.lib")
-#pragma comment(lib, "libxml2-mt.lib")
-#pragma comment(lib, "zlib-mt.lib")
-#else
-#pragma comment(lib, "libfbxsdk-mt.lib")
-#pragma comment(lib, "libxml2-mt.lib")
-#pragma comment(lib, "zlib-mt.lib")
-#endif
+//FBX SDKはDLL版を使う(静的リンク版の.libは100MB以上あり、GitHubに入れられないため)
+//DebugとReleaseでライブラリのフォルダを分けているので(.vcxprojの追加のライブラリディレクトリ)、名前はどちらも同じ
+//実行にはexeの隣にlibfbxsdk.dllが必要(ビルド後に自動でコピーする)
+//(FBXSDK_SHAREDは.vcxprojで定義している。DLLから関数を読み込む形にするため)
+#pragma comment(lib, "libfbxsdk.lib")
 
 // Windows 標準ライブラリ
 #pragma comment(lib, "wininet.lib")

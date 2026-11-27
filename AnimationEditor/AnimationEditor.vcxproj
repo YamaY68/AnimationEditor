@@ -100,7 +100,7 @@
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_DEBUG;_CONSOLE;FBXSDK_SHARED;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <AdditionalIncludeDirectories>$(ProjectDir)Library\DxLib;$(ProjectDir)Library\FBXSDK\2020.3.11\include;$(ProjectDir)Library\ImGui;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
@@ -113,8 +113,9 @@
       <AdditionalLibraryDirectories>$(ProjectDir)Library\DxLib;$(ProjectDir)Library\FBXSDK\2020.3.11\lib\x64\debug;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
     <PostBuildEvent>
-      <Command>xcopy /Y /E /I /D "$(ProjectDir)Data" "$(OutDir)Data"</Command>
-      <Message>Copy Data folder next to the exe</Message>
+      <Command>xcopy /Y /E /I /D "$(ProjectDir)Data" "$(OutDir)Data"
+xcopy /Y /D "$(ProjectDir)Library\FBXSDK\2020.3.11\lib\x64\debug\libfbxsdk.dll" "$(OutDir)"</Command>
+      <Message>Copy Data folder and libfbxsdk.dll next to the exe</Message>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -123,7 +124,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NDEBUG;_CONSOLE;FBXSDK_SHARED;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <AdditionalIncludeDirectories>$(ProjectDir)Library\DxLib;$(ProjectDir)Library\FBXSDK\2020.3.11\include;$(ProjectDir)Library\ImGui;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
@@ -136,8 +137,9 @@
       <AdditionalLibraryDirectories>$(ProjectDir)Library\DxLib;$(ProjectDir)Library\FBXSDK\2020.3.11\lib\x64\release;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
     <PostBuildEvent>
-      <Command>xcopy /Y /E /I /D "$(ProjectDir)Data" "$(OutDir)Data"</Command>
-      <Message>Copy Data folder next to the exe</Message>
+      <Command>xcopy /Y /E /I /D "$(ProjectDir)Data" "$(OutDir)Data"
+xcopy /Y /D "$(ProjectDir)Library\FBXSDK\2020.3.11\lib\x64\release\libfbxsdk.dll" "$(OutDir)"</Command>
+      <Message>Copy Data folder and libfbxsdk.dll next to the exe</Message>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>

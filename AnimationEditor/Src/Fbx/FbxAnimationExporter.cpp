@@ -220,7 +220,7 @@ bool FbxAnimationExporter::Export(const std::string& modelPath, const std::strin
 		//---------- モデルの元のFBXから、座標系と単位を取り出す ----------
 		//(ボーンの値は元のFBXの単位(cm・mなど)のままなので、合わせないと大きさや向きが変わる)
 		FbxImporter* importer = FbxImporter::Create(manager, "");
-		if (!importer->Initialize(modelPath.c_str(), -1, ioSettings))
+		if (!importer->Initialize(AnsiToUtf8(modelPath).c_str(), -1, ioSettings))	//日本語を含むパスでも開けるように
 		{
 			importer->Destroy();
 			outError = "モデルのFBXを開けませんでした: " + modelPath;

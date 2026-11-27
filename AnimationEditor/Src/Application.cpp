@@ -485,9 +485,17 @@ void Application::ProcessDroppedFiles(void)
 		std::transform(ext.begin(), ext.end(), ext.begin(),
 			[](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 
-		if (ext == ".fbx" && !LoadParentModel(path))
+		if (ext != ".fbx")
 		{
-			OutputDebugStringA(("[Load] 読み込み失敗: " + std::string(path) + "\n").c_str());
+			MessageBoxA(hWnd_, ("FBXファイル(.fbx)をドロップしてください\n" + std::string(path)).c_str(),
+				"AnimationEditor", MB_OK | MB_ICONWARNING);
+			continue;
+		}
+		//失敗したら理由がわかるように、画面にも出す(以前はデバッグ出力だけで、何も起きないように見えていた)
+		if (!LoadParentModel(path))
+		{
+			MessageBoxA(hWnd_, ("モデルを読み込めませんでした\n" + std::string(path)).c_str(),
+				"AnimationEditor", MB_OK | MB_ICONERROR);
 		}
 	}
 }
@@ -559,6 +567,11 @@ void Application::AddAnimation(const std::string& filePath)
 	if (loader_.LoadAnimations(filePath, skeleton_, newClips) > 0)
 	{
 		AddClips(std::move(newClips), filePath);
+	}
+	else
+	{
+		MessageBoxA(hWnd_, ("アニメーションを読み込めませんでした\n" + filePath).c_str(),
+			"AnimationEditor", MB_OK | MB_ICONERROR);
 	}
 }
 

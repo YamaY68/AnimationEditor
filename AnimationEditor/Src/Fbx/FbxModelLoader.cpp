@@ -33,6 +33,18 @@ static std::string Utf8ToAnsi(const char* utf8)
 	return result;
 }
 
+// Shift-JISの文字列(ファイルダイアログやドラッグ＆ドロップで受け取るパス)を、UTF-8(FBX SDKに渡すもの)に変換する
+// (変換しないと、ユーザー名やフォルダ名に日本語が入ったパスのFBXを開けない)
+static std::string AnsiToUtf8(const std::string& ansi)
+{
+	char* utf8 = nullptr;
+	FbxAnsiToUTF8(ansi.c_str(), utf8);	// FBX SDK付属の変換関数(変換後の文字列はFbxFreeで解放する)
+	std::string result = utf8 ? utf8 : "";
+	FbxFree(utf8);
+	return result;
+}
+
+
 // FBX SDK が .fbm へ展開したテクスチャをロードしてハンドルを返す
 static int LoadFbxNodeTexture(FbxNode* node, std::unordered_map<FbxVideo*, int>& cache)
 {
@@ -199,8 +211,8 @@ FbxScene* FbxModelLoader::ImportScene(const std::string& filePath, const char* s
 	if (!Initialize()) return nullptr;
 
 	fbxsdk::FbxImporter* importer = fbxsdk::FbxImporter::Create(fbxManager_, "");
-	if (!importer->Initialize(filePath.c_str(), -1, ioSetting_))
-	{
+	//FBX SDKはパスをUTF-8で受け取るので変換する(日本語を含むパスでも開けるように)
+	if (!importer->Initialize(AnsiToUtf8(filePath).c_str(), -1, ioSetting_)) {
 		importer->Destroy();
 		return nullptr;
 	}
