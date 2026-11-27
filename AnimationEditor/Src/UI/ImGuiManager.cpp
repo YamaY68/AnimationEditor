@@ -40,6 +40,9 @@ bool ImGuiManager::Initialize(HWND hWnd)
     ImGuiIO& io = ImGui::GetIO();
     ImGui::StyleColorsDark();
 
+    //フォント(普段のUIは標準のフォント、操作説明など日本語を出すところは日本語のフォント)
+    io.Fonts->AddFontDefault();
+    LoadJapaneseFont();
     //DxLibが内部で作成、保持しているDirect3D11のデバイスとデバイスコンテキストを取得
     ID3D11Device* device = const_cast<ID3D11Device*>(
         static_cast<const ID3D11Device*>(GetUseDirect3D11Device()));
@@ -62,6 +65,28 @@ bool ImGuiManager::Initialize(HWND hWnd)
 
     isInitialized_ = true;
     return true;
+}
+void ImGuiManager::LoadJapaneseFont(void)
+{
+    constexpr float kJapaneseFontSize = 16.0f;  //日本語のフォントの大きさ(ピクセル)
+
+    //Windowsに最初から入っている日本語のフォントを、上から順に探す
+    //(フォントのファイルを一緒に配らなくて済むように)
+    const char* const kFontPaths[] = {
+        "C:\\Windows\\Fonts\\meiryo.ttc",     //メイリオ
+        "C:\\Windows\\Fonts\\YuGothM.ttc",    //游ゴシック
+        "C:\\Windows\\Fonts\\msgothic.ttc",   //MS ゴシック
+    };
+
+    ImGuiIO& io = ImGui::GetIO();
+    for (const char* path : kFontPaths)
+    {
+        //無いファイルを渡すとImGuiが止まるので、先にあるか確かめる
+        if (GetFileAttributesA(path) == INVALID_FILE_ATTRIBUTES) continue;
+
+        japaneseFont_ = io.Fonts->AddFontFromFileTTF(path, kJapaneseFontSize, nullptr, io.Fonts->GetGlyphRangesJapanese());
+        if (japaneseFont_) return;
+    }
 }
 
 void ImGuiManager::Finalize(void)

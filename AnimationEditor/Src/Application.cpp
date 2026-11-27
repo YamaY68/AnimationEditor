@@ -217,7 +217,7 @@ bool Application::UpdateUI(float deltaTime)
 	}
 
 	//操作方法の一覧(モデルが無いときも出せるように、ここで描く)
-	ControlsHelp::Draw(showHelp_);
+	ControlsHelp::Draw(showHelp_, imguiManager_.GetJapaneseFont());
 
 
 	//タイムライン(再生時刻が進む。キーを移したり消したりしたらtrue)
