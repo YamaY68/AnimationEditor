@@ -41,45 +41,39 @@ namespace
 		outS = m.GetS();
 	}
 
-	//シーンに入っているアニメーションを全部消す
-	//(カーブ → カーブノード → レイヤー → AnimStack の順に消す)
-	template<class T>
-	void DestroyAllOf(FbxScene* scene)
+	/// <summary>
+	/// スケルトンと同じ名前・親子関係で、ボーンだけのノードをシーンに作る
+	/// (メッシュ・スキン・マテリアルは作らない。アニメーションだけのFBXにするため)
+	/// </summary>
+	/// <returns>ボーン番号ごとのノード</returns>
+	std::vector<FbxNode*> CreateBoneNodes(FbxScene* scene, const Skeleton& skeleton)
 	{
-		for (int i = scene->GetSrcObjectCount<T>() - 1; i >= 0; --i)
+		std::vector<FbxNode*> nodes(skeleton.GetBoneCount(), nullptr);
+		for (size_t b = 0; b < skeleton.GetBoneCount(); ++b)
 		{
-			scene->GetSrcObject<T>(i)->Destroy();
+			const Bone& bone = skeleton.GetBone(b);
+			FbxNode* node = FbxNode::Create(scene, bone.name_.c_str());
+
+			//ボーンとして扱われるよう、スケルトンの属性を付ける(一番上だけRoot、ほかはLimbNode)
+			FbxSkeleton* attribute = FbxSkeleton::Create(scene, bone.name_.c_str());
+			attribute->SetSkeletonType(bone.parentIndex_ < 0 ? FbxSkeleton::eRoot : FbxSkeleton::eLimbNode);
+			node->SetNodeAttribute(attribute);
+
+			//アニメーションが無いときの姿勢は、バインドポーズにする
+			//(新しく作ったノードはピボットや前回転が無く、回転順もXYZなので、ローカル姿勢をそのまま書ける)
+			FbxVector4 t, r, sc;
+			ToFbxTRS(bone.bindPoseLocal_, t, r, sc);
+			node->LclTranslation.Set(FbxDouble3(t[0], t[1], t[2]));
+			node->LclRotation.Set(FbxDouble3(r[0], r[1], r[2]));
+			node->LclScaling.Set(FbxDouble3(sc[0], sc[1], sc[2]));
+
+			//親の下につなぐ(ボーンは親が先に並んでいるので、親のノードはもう作ってある)
+			const int parent = bone.parentIndex_;
+			FbxNode* parentNode = (parent >= 0 && parent < static_cast<int>(b)) ? nodes[parent] : scene->GetRootNode();
+			parentNode->AddChild(node);
+			nodes[b] = node;
 		}
-	}
-	void RemoveAllAnimations(FbxScene* scene)
-	{
-		DestroyAllOf<FbxAnimCurve>(scene);
-		DestroyAllOf<FbxAnimCurveNode>(scene);
-		DestroyAllOf<FbxAnimLayer>(scene);
-		DestroyAllOf<FbxAnimStack>(scene);
-	}
-
-	//ノードのピボット・前回転・後回転などを無くし、ローカル行列 = 移動×回転×スケール だけにする
-	//エディタはボーンの姿勢を「ローカル行列を分解した値」で持っているので、
-	//こうしておくと、その値をそのままLcl Translation / Rotation / Scalingに書ける
-	//(スキンのバインドポーズはクラスタにワールド行列で記録されているので、ここを変えても崩れない)
-	void ResetPivots(FbxNode* node, const Transform& bindPose)
-	{
-		const FbxVector4 zero(0.0, 0.0, 0.0);
-		node->SetRotationOffset(FbxNode::eSourcePivot, zero);
-		node->SetRotationPivot(FbxNode::eSourcePivot, zero);
-		node->SetPreRotation(FbxNode::eSourcePivot, zero);
-		node->SetPostRotation(FbxNode::eSourcePivot, zero);
-		node->SetScalingOffset(FbxNode::eSourcePivot, zero);
-		node->SetScalingPivot(FbxNode::eSourcePivot, zero);
-		node->SetRotationOrder(FbxNode::eSourcePivot, eEulerXYZ);
-
-		//アニメーションが無いときの姿勢は、バインドポーズにする
-		FbxVector4 t, r, s;
-		ToFbxTRS(bindPose, t, r, s);
-		node->LclTranslation.Set(FbxDouble3(t[0], t[1], t[2]));
-		node->LclRotation.Set(FbxDouble3(r[0], r[1], r[2]));
-		node->LclScaling.Set(FbxDouble3(s[0], s[1], s[2]));
+		return nodes;
 	}
 
 	//AnimStackの名前に使えない文字を置き換える
@@ -203,8 +197,12 @@ bool FbxAnimationExporter::Export(const std::string& modelPath, const std::strin
 		outError = "書き出すクリップがありません";
 		return false;
 	}
+	if (skeleton.GetBoneCount() == 0)
+	{
+		outError = "ボーンがありません";
+		return false;
+	}
 
-	//書き出し用に、FBX SDKを別に用意する(読み込み用のシーンは三角形化などで書き換わっているため)
 	FbxManager* manager = FbxManager::Create();
 	if (!manager)
 	{
@@ -215,10 +213,12 @@ bool FbxAnimationExporter::Export(const std::string& modelPath, const std::strin
 	manager->SetIOSettings(ioSettings);
 
 	bool succeeded = false;
+	FbxScene* sourceScene = nullptr;
 	FbxScene* scene = nullptr;
 	do
 	{
-		//---------- モデルの元のFBXを開き直す ----------
+		//---------- モデルの元のFBXから、座標系と単位を取り出す ----------
+		//(ボーンの値は元のFBXの単位(cm・mなど)のままなので、合わせないと大きさや向きが変わる)
 		FbxImporter* importer = FbxImporter::Create(manager, "");
 		if (!importer->Initialize(modelPath.c_str(), -1, ioSettings))
 		{
@@ -226,8 +226,8 @@ bool FbxAnimationExporter::Export(const std::string& modelPath, const std::strin
 			outError = "モデルのFBXを開けませんでした: " + modelPath;
 			break;
 		}
-		scene = FbxScene::Create(manager, "ExportScene");
-		const bool imported = importer->Import(scene);
+		sourceScene = FbxScene::Create(manager, "SourceScene");
+		const bool imported = importer->Import(sourceScene);
 		importer->Destroy();
 		if (!imported)
 		{
@@ -235,27 +235,16 @@ bool FbxAnimationExporter::Export(const std::string& modelPath, const std::strin
 			break;
 		}
 
-		//---------- 元のアニメーションを消し、ボーンのノードを整える ----------
-		RemoveAllAnimations(scene);
+		//---------- ボーンだけの新しいシーンを作る ----------
+		scene = FbxScene::Create(manager, "ExportScene");
+		FbxGlobalSettings& settings = scene->GetGlobalSettings();
+		settings.SetAxisSystem(sourceScene->GetGlobalSettings().GetAxisSystem());
+		settings.SetSystemUnit(sourceScene->GetGlobalSettings().GetSystemUnit());
+		settings.SetTimeMode(FbxTime::ConvertFrameRateToTimeMode(EditorConst::kSampleFrameRate));
 
-		std::vector<FbxNode*> boneNodes(skeleton.GetBoneCount(), nullptr);
-		int foundCount = 0;
-		for (size_t b = 0; b < skeleton.GetBoneCount(); ++b)
-		{
-			FbxNode* node = scene->FindNodeByName(skeleton.GetBone(b).name_.c_str());
-			if (!node) continue;
-			ResetPivots(node, skeleton.GetBone(b).bindPoseLocal_);
-			boneNodes[b] = node;
-			++foundCount;
-		}
-		if (foundCount == 0)
-		{
-			outError = "モデルのFBXにボーンが見つかりませんでした";
-			break;
-		}
+		const std::vector<FbxNode*> boneNodes = CreateBoneNodes(scene, skeleton);
 
 		//---------- クリップをAnimStackにする ----------
-		scene->GetGlobalSettings().SetTimeMode(FbxTime::ConvertFrameRateToTimeMode(EditorConst::kSampleFrameRate));
 		for (const AnimationClip* clip : clips)
 		{
 			if (clip) BakeClip(scene, skeleton, boneNodes, *clip);
@@ -264,12 +253,10 @@ bool FbxAnimationExporter::Export(const std::string& modelPath, const std::strin
 		if (FbxAnimStack* first = scene->GetSrcObject<FbxAnimStack>(0))
 		{
 			scene->SetCurrentAnimationStack(first);
-			scene->GetGlobalSettings().SetTimelineDefaultTimeSpan(first->GetLocalTimeSpan());
+			settings.SetTimelineDefaultTimeSpan(first->GetLocalTimeSpan());
 		}
 
 		//---------- 書き出す ----------
-		//テクスチャもFBXの中に埋め込む(元のFBXが埋め込みだった場合、そのままでは見つからなくなるため)
-		ioSettings->SetBoolProp(EXP_FBX_EMBEDDED, true);
 		ioSettings->SetBoolProp(EXP_FBX_ANIMATION, true);
 
 		FbxExporter* exporter = FbxExporter::Create(manager, "");
@@ -289,6 +276,7 @@ bool FbxAnimationExporter::Export(const std::string& modelPath, const std::strin
 	} while (false);
 
 	if (scene) scene->Destroy();
+	if (sourceScene) sourceScene->Destroy();
 	manager->Destroy();	//IOSettingsもここで一緒に消える
 	return succeeded;
 }

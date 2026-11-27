@@ -103,15 +103,19 @@
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
-      <AdditionalIncludeDirectories>$(ProjectDir)Library\DxLib;C:\Project\AnimationEditor\AnimationEditor\Library\FBXSDK\2020.3.11\include;$(ProjectDir)Library\ImGui;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)Library\DxLib;$(ProjectDir)Library\FBXSDK\2020.3.11\include;$(ProjectDir)Library\ImGui;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>$(ProjectDir)Library\DxLib;C:\Project\AnimationEditor\AnimationEditor\Library\FBXSDK\2020.3.11\lib\x64\debug;C:\Project\AnimationEditor\AnimationEditor\Library\FBXSDK\2020.3.11\lib\x64\release</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(ProjectDir)Library\DxLib;$(ProjectDir)Library\FBXSDK\2020.3.11\lib\x64\debug;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
+    <PostBuildEvent>
+      <Command>xcopy /Y /E /I /D "$(ProjectDir)Data" "$(OutDir)Data"</Command>
+      <Message>Copy Data folder next to the exe</Message>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
@@ -122,15 +126,19 @@
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
-      <AdditionalIncludeDirectories>$(ProjectDir)Library\DxLib;C:\Project\AnimationEditor\AnimationEditor\Library\FBXSDK\2020.3.11\include;$(ProjectDir)Library\ImGui;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)Library\DxLib;$(ProjectDir)Library\FBXSDK\2020.3.11\include;$(ProjectDir)Library\ImGui;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>$(ProjectDir)Library\DxLib;C:\Project\AnimationEditor\AnimationEditor\Library\FBXSDK\2020.3.11\lib\x64\debug;C:\Project\AnimationEditor\AnimationEditor\Library\FBXSDK\2020.3.11\lib\x64\release</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(ProjectDir)Library\DxLib;$(ProjectDir)Library\FBXSDK\2020.3.11\lib\x64\release;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
+    <PostBuildEvent>
+      <Command>xcopy /Y /E /I /D "$(ProjectDir)Data" "$(OutDir)Data"</Command>
+      <Message>Copy Data folder next to the exe</Message>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="Src\UI\BezierCurveWidget.cpp" />
