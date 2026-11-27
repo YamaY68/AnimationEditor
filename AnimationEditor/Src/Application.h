@@ -22,6 +22,7 @@
 #include "Edit/PoseEdit.h"
 #include "Animation/TwoBoneIK.h"
 #include "Edit/IKPinSet.h"
+#include "UI/ControlsHelp.h"
 /// <summary>
 /// アプリケーション全体
 /// 1フレームの流れ:入力 → UI → ポーズの更新 → 描画
@@ -119,7 +120,7 @@ private:
 	bool skeletonLoaded_ = false;
 	bool meshLoaded_ = false;
 	bool showBones_ = true;
-
+	bool showHelp_ = false;	//操作方法の一覧を出しているか(Tabで切り替え)
 	Pose currentPose_;		//今のクリップのポーズ
 	Pose targetPose_;		//ブレンド先のポーズ
 	Pose finalPose_;		//表示するポーズ(ブレンド後。インスペクターで編集するのもこれ)
@@ -128,4 +129,5 @@ private:
 	SampleInputs lastSampleInputs_;	//前回ポーズを求めたときの条件
 	bool poseDirty_ = true;			//条件に関係なく、次のフレームでポーズを計算し直すか
 	int hoveredBoneIndex_ = -1;	//カーソルが重なっているボーン(-1:無し)
+	LONGLONG lastFrameTime_ = 0;	//前のフレームの時刻(マイクロ秒。GetNowHiPerformanceCountの値。0:まだ無い)
 };

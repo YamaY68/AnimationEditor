@@ -234,9 +234,9 @@ void BoneGizmo::DrawStatus(void) const
 
 	char text[192];
 	std::snprintf(text, sizeof(text),
-		"Gizmo: %s / %s   (W:Move  E:Rotate  I:IK  X:Local/World  RightClick:Switch)", opName, spaceName);
-
+		"Gizmo: %s / %s   (W:Move  E:Rotate  I:IK  X:Local/World  RightClick:Switch  Tab:Help)", opName, spaceName);
 	//メニューバーのすぐ下に表示する
 	const ImVec2 pos(10.0f, ImGui::GetFrameHeight() + 8.0f);
 	ImGui::GetBackgroundDrawList()->AddText(pos, IM_COL32(255, 255, 255, 200), text);
+
 }

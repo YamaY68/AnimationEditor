@@ -355,11 +355,16 @@ bool TimeLineView::DrawSpeedRangeControls(EditorState& state, AnimationClip& cli
 	//区間の中の緩急(ベジェ曲線)
 	ImGui::SameLine();
 	ImGui::Checkbox("Curve##Speed", &useSpeedCurve_);
+	ImVec2 popupAnchor = ImGui::GetItemRectMin();	//ポップアップを出す位置(Editボタンの左上)
 	if (useSpeedCurve_)
 	{
 		ImGui::SameLine();
 		if (ImGui::Button("Edit##SpeedCurve")) ImGui::OpenPopup("SpeedCurvePopup");
+		popupAnchor = ImGui::GetItemRectMin();
 	}
+	//タイムラインは画面の下にあるので、ポップアップはボタンの上に出す(下端をボタンの上端にそろえる)
+	//(マウスの位置に出すと、画面の下にはみ出してしまうため)
+	ImGui::SetNextWindowPos(popupAnchor, ImGuiCond_Appearing, ImVec2(0.0f, 1.0f));
 	if (ImGui::BeginPopup("SpeedCurvePopup"))
 	{
 		ImGui::Text("Horizontal: new time  /  Vertical: original motion");
@@ -387,7 +392,7 @@ bool TimeLineView::DrawSpeedRangeControls(EditorState& state, AnimationClip& cli
 
 	//元の動きも書き換えるので、Undoには元の動きと長さも保存する
 	state.RecordUndo(true);
-	if (!clip.ChangeRangeSpeed(in, out, rangeSpeed_)) return false;
+	if (!clip.ChangeRangeSpeed(in, out, rangeSpeed_, useSpeedCurve_ ? &speedCurve_ : nullptr)) return false;
 
 	//区間は新しい長さに合わせて残す(続けて調整しやすいように)
 	const float start = std::min(in, out);

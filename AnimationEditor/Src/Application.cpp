@@ -7,8 +7,8 @@
 namespace
 {
 	//---------- ウィンドウ ----------
-	constexpr int kScreenWidth = 1280;
-	constexpr int kScreenHeight = 720;
+	constexpr int kScreenWidth = 1600;
+	constexpr int kScreenHeight = 900;
 	constexpr int kColorBitDepth = 32;
 
 	//---------- カメラ ----------
@@ -30,12 +30,14 @@ namespace
 	constexpr int kSelectedBoneDivisions = 12;	//その球の分割数
 	constexpr float kBonePickRadiusPx = 12.0f;	//クリックで関節を選べる距離(画面上のピクセル)
 	constexpr float kBoneLinePickRadiusPx = 6.0f;	//クリックでラインを選べる距離(画面上のピクセル)	//---------- その他 ----------
-	constexpr float kJointRadius = 0.6f;	//関節の球の半径
+	constexpr float kJointRadius = 1.0f;	//関節の球の半径
 	constexpr float kBoneRadius = 0.3f;		//ボーンの太さ(カプセルの半径)
 	constexpr float kPinRadius = 2.0f;	//ピンの位置に描く球の半径
 	constexpr float kPoleRadius = 2.2f;	//ポールの目標の位置に描く球の半径
-	//1フレームの経過時間(秒)。60fpsで動く前提の固定値
-	constexpr float kFixedDeltaTime = 1.0f / 60.0f;
+	//1フレームの経過時間の上限(秒)
+	//(ブレークポイントで止めたときや、ウィンドウをドラッグしている間に時間が大きく飛ばないように)
+	constexpr float kMaxDeltaTime = 0.1f;
+	constexpr float kMicroSecondsToSeconds = 1.0e-6f;
 	const char* const kDefaultModelPath = "Data/DefaultModel1.fbx";
 
 	//ワールド行列の平行移動成分(＝ボーンの位置)を取り出す
@@ -108,7 +110,12 @@ void Application::Release(void)
 
 void Application::UpdateFrame(void)
 {
-	const float deltaTime = kFixedDeltaTime;
+	//前のフレームから実際に経過した時間(秒)
+	//(決め打ちの1/60秒だと、DebugとReleaseなど処理の速さが違うと再生速度が変わってしまうため)
+	const LONGLONG now = GetNowHiPerformanceCount();
+	const float elapsed = (lastFrameTime_ > 0) ? static_cast<float>(now - lastFrameTime_) * kMicroSecondsToSeconds : 0.0f;
+	const float deltaTime = (std::min)(elapsed, kMaxDeltaTime);	//(std::min)と括弧で囲むのは、Windowsのminマクロと区別するため
+	lastFrameTime_ = now;
 	ClearDrawScreen();
 	ProcessDroppedFiles();
 
@@ -142,6 +149,13 @@ void Application::HandleShortcuts(void)
 	const ImGuiIO& io = ImGui::GetIO();
 	//文字入力中はショートカットを無効にする
 	if (io.WantTextInput) return;
+
+	//Tabキー：操作方法の一覧の表示の切り替え
+	if (!io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Tab, false))
+	{
+		showHelp_ = !showHelp_;
+	}
+
 
 	//Bキー：ボーン表示の切り替え
 	if (!io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_B, false))
@@ -201,6 +215,10 @@ bool Application::UpdateUI(float deltaTime)
 	{
 		ExportFbx(menu.filePath, menu.action == MenuAction::ExportAllClips);
 	}
+
+	//操作方法の一覧(モデルが無いときも出せるように、ここで描く)
+	ControlsHelp::Draw(showHelp_);
+
 
 	//タイムライン(再生時刻が進む。キーを移したり消したりしたらtrue)
 	const bool timelineKeyEdited = timelineView_.Draw(state_, deltaTime);
@@ -407,7 +425,7 @@ void Application::DrawBones(void) const
 
 	BoneDrawStyle style;
 	style.boneColor = GetColor(255, 255, 0);		//黄
-	style.jointColor = GetColor(0, 255, 255);		//水色
+	style.jointColor = GetColor(255, 100, 100);		//
 	style.selectedColor = GetColor(255, 0, 0);		//選択中(赤)
 	style.hoveredColor = GetColor(255, 128, 0);		//カーソルが重なっている(オレンジ)
 	style.jointRadius = kJointRadius;

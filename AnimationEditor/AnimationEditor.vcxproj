@@ -141,6 +141,7 @@
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="Src\UI\ControlsHelp.cpp" />
     <ClCompile Include="Src\UI\BezierCurveWidget.cpp" />
     <ClCompile Include="Src\Fbx\FbxAnimationExporter.cpp" />
     <ClCompile Include="Src\Edit\IKPinSet.cpp" />
@@ -171,6 +172,7 @@
     <ClCompile Include="Src\Edit\UndoStack.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Src\UI\ControlsHelp.h" />
     <ClInclude Include="Src\UI\BezierCurveWidget.h" />
     <ClInclude Include="Src\Fbx\FbxAnimationExporter.h" />
     <ClInclude Include="Src\Edit\IKPinSet.h" />

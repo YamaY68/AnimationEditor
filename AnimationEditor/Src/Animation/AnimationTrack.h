@@ -99,8 +99,7 @@ public:
 		RemoveKey(fromTime);
 		RemoveKey(toTime);	//移動先にあったキーは上書きする
 		AddKey(toTime, moved.value_, moved.interpolation_);
-		FindKey(toTime)->bezier_ = moved.bezier_;	//ベジェの曲線も引き継ぐ   ← 足す
-		return true;
+		FindKey(toTime)->bezier_ = moved.bezier_;	//ベジェの曲線も引き継ぐ
 		return true;
 	}
 

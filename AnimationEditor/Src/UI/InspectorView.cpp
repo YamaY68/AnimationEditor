@@ -19,12 +19,6 @@ namespace
 	//補間方法の選択肢(InterpolationTypeと同じ順番に並べる)
 	const char* const kInterpNames[] = { "Linear", "Step", "EaseIn", "EaseOut", "EaseInOut", "Bezier" };
 
-	//---------- ベジェ曲線の編集欄 ----------
-	constexpr float kBezierGraphHeight = 150.0f;	//グラフの高さ
-	constexpr float kBezierHandleRadius = 5.0f;		//制御点の丸の半径
-	constexpr float kBezierGrabRadius = 10.0f;		//制御点をつかめる距離(ピクセル)
-	constexpr int kBezierCurveSegments = 40;		//曲線を描くときの分割数
-
 	//ベジェ補間のグラフに表示する値の範囲(行き過ぎて戻る動きも作れるように、0～1より広くする)
 	constexpr float kBezierValueMin = -0.5f;
 	constexpr float kBezierValueMax = 1.5f;
